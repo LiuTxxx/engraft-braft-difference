@@ -18,8 +18,9 @@
 #define BRAFT_PROTOBUF_FILE_H
 
 #include <string>
-#include <google/protobuf/message.h>
+#include "google/protobuf/message.h"
 #include "braft/file_system_adaptor.h"
+#include "butil/state_cont/monotonic_counter.h"
 
 namespace braft {
 
@@ -34,6 +35,12 @@ public:
 
     int save(const ::google::protobuf::Message* message, bool sync);
     int load(::google::protobuf::Message* message);
+
+    //- flag is used to distinguish log_counter or vote_counter. This flag is needed
+    //- when using distributed counters. flag 0: log_counter; flag 1: vote_counter
+    int save(const ::google::protobuf::Message* message, bool sync, butil::CounterID* counter_id, int flag);
+    //- Update counter_id if load successfully.
+    int load(::google::protobuf::Message* message, butil::CounterID* counter_id, int flag);
 
 private:
     std::string _path;

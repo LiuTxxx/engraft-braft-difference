@@ -17,13 +17,16 @@
 
 #include <pthread.h>
 #include <unistd.h>
-#include <butil/string_printf.h>
-#include <butil/class_name.h>
+#include "butil/string_printf.h"
+#include "butil/class_name.h"
 #include "braft/raft.h"
 #include "braft/node.h"
 #include "braft/storage.h"
 #include "braft/node_manager.h"
 #include "braft/log.h"
+#include "braft/log_enc.h"            //- Encrypted segment log storage
+#include "braft/log_enc2.h"            //- Encrypted segment log storage2
+#include "braft/log_enc_state_cont.h" //- Encrypted state continuous segment log storage
 #include "braft/memory_log.h"
 #include "braft/raft_meta.h"
 #include "braft/snapshot.h"
@@ -48,13 +51,18 @@ static pthread_once_t global_init_once = PTHREAD_ONCE_INIT;
 struct GlobalExtension {
     SegmentLogStorage local_log;
     MemoryLogStorage memory_log;
+    EncryptedSegmentLogStorage enc_local_log;
+    EncryptedSegmentTestLogStorage enc_local_log2;
+    EncryptedSCSegmentLogStorage enc_sc_local_log;
     
     // manage only one raft instance
     FileBasedSingleMetaStorage single_meta;
-    // manage a batch of raft instances
-    KVBasedMergedMetaStorage merged_meta;
-    // mix two types for double write when upgrade and downgrade  
-    MixedMetaStorage mixed_meta;
+    // // manage a batch of raft instances
+    // KVBasedMergedMetaStorage merged_meta;
+    // // mix two types for double write when upgrade and downgrade  
+    // MixedMetaStorage mixed_meta;
+    //- with rollback prevention
+    StateContinuousMetaStorage state_cont_meta;
 
     LocalSnapshotStorage local_snapshot;
 };
@@ -64,16 +72,20 @@ static void global_init_or_die_impl() {
 
     log_storage_extension()->RegisterOrDie("local", &s_ext.local_log);
     log_storage_extension()->RegisterOrDie("memory", &s_ext.memory_log);
+    log_storage_extension()->RegisterOrDie("encrypted_local", &s_ext.enc_local_log);
+    log_storage_extension()->RegisterOrDie("encrypted_local2", &s_ext.enc_local_log2);
+    log_storage_extension()->RegisterOrDie("state_continuous", &s_ext.enc_sc_local_log);
   
     // uri = local://{single_path}
     // |single_path| usually ends with `/meta'
     // NOTICE: not change "local" to "local-single" because of compatibility
     meta_storage_extension()->RegisterOrDie("local", &s_ext.single_meta);
     // uri = local-merged://{merged_path}
-    // |merged_path| usually ends with `/merged_meta'
-    meta_storage_extension()->RegisterOrDie("local-merged", &s_ext.merged_meta);
-    // uri = local-mixed://merged_path={merged_path}&&single_path={single_path}
-    meta_storage_extension()->RegisterOrDie("local-mixed", &s_ext.mixed_meta);
+    // // |merged_path| usually ends with `/merged_meta'
+    // meta_storage_extension()->RegisterOrDie("local-merged", &s_ext.merged_meta);
+    // // uri = local-mixed://merged_path={merged_path}&&single_path={single_path}
+    // meta_storage_extension()->RegisterOrDie("local-mixed", &s_ext.mixed_meta);
+    meta_storage_extension()->RegisterOrDie("state_continuous", &s_ext.state_cont_meta);
  
     snapshot_storage_extension()->RegisterOrDie("local", &s_ext.local_snapshot);
 }
