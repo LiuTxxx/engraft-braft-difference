@@ -19,8 +19,8 @@
 #ifndef BRPC_CLOSURE_GUARD_H
 #define BRPC_CLOSURE_GUARD_H
 
-#include <google/protobuf/service.h>
-#include "butil/macros.h"
+#include "google/protobuf/service.h"
+#include "sgxbutil/macros.h"
 
 
 namespace brpc {

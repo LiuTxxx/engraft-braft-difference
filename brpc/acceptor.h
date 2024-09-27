@@ -18,9 +18,8 @@
 #ifndef BRPC_ACCEPTOR_H
 #define BRPC_ACCEPTOR_H
 
-#include "bthread/bthread.h"                       // bthread_t
-#include "butil/synchronization/condition_variable.h"
-#include "butil/containers/flat_map.h"
+#include "sgxbutil/synchronization/condition_variable.h"
+#include "sgxbutil/containers/flat_map.h"
 #include "brpc/input_messenger.h"
 
 
@@ -32,9 +31,8 @@ struct ConnectStatistics {
 // Accept connections from a specific port and then
 // process messages from which it reads
 class Acceptor : public InputMessenger {
-friend class Server;
 public:
-    typedef butil::FlatMap<SocketId, ConnectStatistics> SocketMap;
+    typedef sgxbutil::FlatMap<SocketId, ConnectStatistics> SocketMap;
 
     enum Status {
         UNINITIALIZED = 0,
@@ -44,7 +42,7 @@ public:
     };
 
 public:
-    explicit Acceptor(bthread_keytable_pool_t* pool = NULL);
+    explicit Acceptor();
     ~Acceptor();
 
     // [thread-safe] Accept connections from `listened_fd'. Ownership of
@@ -55,8 +53,7 @@ public:
     // `idle_timeout_sec' > 0
     // Return 0 on success, -1 otherwise.
     int StartAccept(int listened_fd, int idle_timeout_sec,
-                    const std::shared_ptr<SocketSSLContext>& ssl_ctx,
-                    bool force_ssl);
+                    const std::shared_ptr<SocketSSLContext>& ssl_ctx);
 
     // [thread-safe] Stop accepting connections.
     // `closewait_ms' is not used anymore.
@@ -92,7 +89,6 @@ private:
     // Remove the accepted socket `sock' from inside
     void BeforeRecycle(Socket* sock) override;
 
-    bthread_keytable_pool_t* _keytable_pool; // owned by Server
     Status _status;
     int _idle_timeout_sec;
     bthread_t _close_idle_tid;
@@ -101,20 +97,13 @@ private:
     // The Socket tso accept connections.
     SocketId _acception_id;
 
-    butil::Mutex _map_mutex;
-    butil::ConditionVariable _empty_cond;
+    sgxbutil::Mutex _map_mutex;
+    sgxbutil::ConditionVariable _empty_cond;
     
     // The map containing all the accepted sockets
     SocketMap _socket_map;
 
-    bool _force_ssl;
     std::shared_ptr<SocketSSLContext> _ssl_ctx;
-
-    // Whether to use rdma or not
-    bool _use_rdma;
-
-    // Acceptor belongs to this tag
-    bthread_tag_t _bthread_tag;
 };
 
 } // namespace brpc

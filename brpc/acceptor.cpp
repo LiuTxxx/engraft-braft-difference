@@ -17,11 +17,10 @@
 
 
 #include <inttypes.h>
-#include <gflags/gflags.h>
-#include "butil/fd_guard.h"                 // fd_guard 
-#include "butil/fd_utility.h"               // make_close_on_exec
-#include "butil/time.h"                     // gettimeofday_us
-#include "brpc/rdma/rdma_endpoint.h"
+#include "google/gflags/gflags.h"
+#include "sgxbutil/fd_guard.h"                 // fd_guard 
+#include "sgxbutil/fd_utility.h"               // make_close_on_exec
+#include "sgxbutil/time.h"                     // gettimeofday_us
 #include "brpc/acceptor.h"
 
 
@@ -29,19 +28,16 @@ namespace brpc {
 
 static const int INITIAL_CONNECTION_CAP = 65536;
 
-Acceptor::Acceptor(bthread_keytable_pool_t* pool)
+Acceptor::Acceptor()
     : InputMessenger()
-    , _keytable_pool(pool)
     , _status(UNINITIALIZED)
     , _idle_timeout_sec(-1)
     , _close_idle_tid(INVALID_BTHREAD)
     , _listened_fd(-1)
     , _acception_id(0)
     , _empty_cond(&_map_mutex)
-    , _force_ssl(false)
-    , _ssl_ctx(NULL) 
-    , _use_rdma(false)
-    , _bthread_tag(BTHREAD_TAG_DEFAULT) {
+    , _ssl_ctx(NULL) {
+    LOG(INFO) << "Func: " << __FUNCTION__ << " Creating new acceptor...";
 }
 
 Acceptor::~Acceptor() {
@@ -50,16 +46,9 @@ Acceptor::~Acceptor() {
 }
 
 int Acceptor::StartAccept(int listened_fd, int idle_timeout_sec,
-                          const std::shared_ptr<SocketSSLContext>& ssl_ctx,
-                          bool force_ssl) {
+                          const std::shared_ptr<SocketSSLContext>& ssl_ctx) {
     if (listened_fd < 0) {
         LOG(FATAL) << "Invalid listened_fd=" << listened_fd;
-        return -1;
-    }
-
-    if (!ssl_ctx && force_ssl) {
-        LOG(ERROR) << "Fail to force SSL for all connections "
-                      " because ssl_ctx is NULL";
         return -1;
     }
     
@@ -75,16 +64,16 @@ int Acceptor::StartAccept(int listened_fd, int idle_timeout_sec,
         LOG(FATAL) << "Acceptor hasn't stopped yet: status=" << status();
         return -1;
     }
+    LOG(INFO) << __FUNCTION__ << " idle_timeout_sec = " << idle_timeout_sec; 
+    //- idle_timeout_sec is -1 by default.
     if (idle_timeout_sec > 0) {
-        bthread_attr_t tmp = BTHREAD_ATTR_NORMAL;
-        tmp.tag = _bthread_tag;
-        if (bthread_start_background(&_close_idle_tid, &tmp, CloseIdleConnections, this) != 0) {
+        if (bthread_start_background(&_close_idle_tid, NULL,
+                                     CloseIdleConnections, this) != 0) {
             LOG(FATAL) << "Fail to start bthread";
             return -1;
         }
     }
     _idle_timeout_sec = idle_timeout_sec;
-    _force_ssl = force_ssl;
     _ssl_ctx = ssl_ctx;
     
     // Creation of _acception_id is inside lock so that OnNewConnections
@@ -92,7 +81,7 @@ int Acceptor::StartAccept(int listened_fd, int idle_timeout_sec,
     SocketOptions options;
     options.fd = listened_fd;
     options.user = this;
-    options.bthread_tag = _bthread_tag;
+    //- OnNewConnections is the callback function when edge trigger events of EPOLL come
     options.on_edge_triggered_events = OnNewConnections;
     if (Socket::Create(options, &_acception_id) != 0) {
         // Close-idle-socket thread will be stopped inside destructor
@@ -106,9 +95,11 @@ int Acceptor::StartAccept(int listened_fd, int idle_timeout_sec,
 }
 
 void* Acceptor::CloseIdleConnections(void* arg) {
+    //- Enters for the first time, set this var to true;
     Acceptor* am = static_cast<Acceptor*>(arg);
     std::vector<SocketId> checking_fds;
     const uint64_t CHECK_INTERVAL_US = 1000000UL;
+    //- _close_idle_tid_continue may be set to false in Acceptor::Join() func.
     while (bthread_usleep(CHECK_INTERVAL_US) == 0) {
         // TODO: this is not efficient for a lot of connections(>100K)
         am->ListConnections(&checking_fds);
@@ -174,7 +165,7 @@ int Acceptor::Initialize() {
 
 // NOTE: Join() can happen before StopAccept()
 void Acceptor::Join() {
-    std::unique_lock<butil::Mutex> mu(_map_mutex);
+    std::unique_lock<sgxbutil::Mutex> mu(_map_mutex);
     if (_status != STOPPING && _status != RUNNING) {  // no need to join.
         return;
     }
@@ -187,7 +178,7 @@ void Acceptor::Join() {
     const bthread_t saved_close_idle_tid = _close_idle_tid;
     mu.unlock();
 
-    // Join the bthread outside lock.
+    //- Join the pthread outside lock.
     if (saved_idle_timeout_sec > 0) {
         bthread_stop(saved_close_idle_tid);
         bthread_join(saved_close_idle_tid, NULL);
@@ -216,7 +207,7 @@ void Acceptor::ListConnections(std::vector<SocketId>* conn_list,
     // ConnectionCount is inaccurate, enough space is reserved
     conn_list->reserve(ConnectionCount() + 10);
 
-    std::unique_lock<butil::Mutex> mu(_map_mutex);
+    std::unique_lock<sgxbutil::Mutex> mu(_map_mutex);
     if (!_socket_map.initialized()) {
         // Optional. Uninitialized FlatMap should be iteratable.
         return;
@@ -254,13 +245,15 @@ void Acceptor::ListConnections(std::vector<SocketId>* conn_list) {
 
 void Acceptor::OnNewConnectionsUntilEAGAIN(Socket* acception) {
     while (1) {
-        struct sockaddr_storage in_addr;
-        bzero(&in_addr, sizeof(in_addr));
+        LOG(INFO) << "Func: " << __FUNCTION__ << " Socket-" << acception->id() << " Establishing connection with " << acception->remote_side();
+        struct sockaddr in_addr;
         socklen_t in_len = sizeof(in_addr);
-        butil::fd_guard in_fd(accept(acception->fd(), (sockaddr*)&in_addr, &in_len));
+        sgxbutil::fd_guard in_fd(accept(acception->fd(), &in_addr, &in_len));
+        LOG(INFO) << "Func: " << __FUNCTION__ << " accepted in_fd = " << in_fd;
         if (in_fd < 0) {
             // no EINTR because listened fd is non-blocking.
             if (errno == EAGAIN) {
+                LOG(INFO) << "Func: " << __FUNCTION__ << " Connecting errno = EAGAIN";
                 return;
             }
             // Do NOT return -1 when `accept' failed, otherwise `_listened_fd'
@@ -282,23 +275,11 @@ void Acceptor::OnNewConnectionsUntilEAGAIN(Socket* acception) {
         
         SocketId socket_id;
         SocketOptions options;
-        options.keytable_pool = am->_keytable_pool;
         options.fd = in_fd;
-        butil::sockaddr2endpoint(&in_addr, in_len, &options.remote_side);
+        options.remote_side = sgxbutil::EndPoint(*(sockaddr_in*)&in_addr);
         options.user = acception->user();
-        options.force_ssl = am->_force_ssl;
+        options.on_edge_triggered_events = InputMessenger::OnNewMessages;
         options.initial_ssl_ctx = am->_ssl_ctx;
-#if BRPC_WITH_RDMA
-        if (am->_use_rdma) {
-            options.on_edge_triggered_events = rdma::RdmaEndpoint::OnNewDataFromTcp;
-        } else {
-#else
-        {
-#endif
-            options.on_edge_triggered_events = InputMessenger::OnNewMessages;
-        }
-        options.use_rdma = am->_use_rdma;
-        options.bthread_tag = am->_bthread_tag;
         if (Socket::Create(options, &socket_id) != 0) {
             LOG(ERROR) << "Fail to create Socket";
             continue;
@@ -313,7 +294,9 @@ void Acceptor::OnNewConnectionsUntilEAGAIN(Socket* acception) {
         // may surprisingly be 0 even if the RPC is already done.
 
         SocketUniquePtr sock;
+        //- Address the socket by socket_id regardless it is failed or not.
         if (Socket::AddressFailedAsWell(socket_id, &sock) >= 0) {
+            LOG(INFO) << "Func: " << __FUNCTION__ << " AddressFailedAsWell";
             bool is_running = true;
             {
                 BAIDU_SCOPED_LOCK(am->_map_mutex);
@@ -321,7 +304,7 @@ void Acceptor::OnNewConnectionsUntilEAGAIN(Socket* acception) {
                 // Always add this socket into `_socket_map' whether it
                 // has been `SetFailed' or not, whether `Acceptor' is
                 // running or not. Otherwise, `Acceptor::BeforeRecycle'
-                // may be called (inside Socket::BeforeRecycled) after `Acceptor'
+                // may be called (inside Socket::OnRecycle) after `Acceptor'
                 // has been destroyed
                 am->_socket_map.insert(socket_id, ConnectStatistics());
             }
@@ -339,6 +322,7 @@ void Acceptor::OnNewConnectionsUntilEAGAIN(Socket* acception) {
 }
 
 void Acceptor::OnNewConnections(Socket* acception) {
+    LOG(INFO) << "Func: " << __FUNCTION__ << " pthread-" << pthread_self();
     int progress = Socket::PROGRESS_INIT;
     do {
         OnNewConnectionsUntilEAGAIN(acception);

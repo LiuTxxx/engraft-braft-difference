@@ -22,7 +22,6 @@
 
 #include "brpc/socket.h"
 #include "brpc/controller.h"
-#include "brpc/stream.h"
 
 namespace google {
 namespace protobuf {
@@ -44,6 +43,7 @@ public:
     }
 
     void OnResponse(CallId id, int saved_error) {
+        LOG(INFO) << "Func: " << __FUNCTION__ << " CallId = " << id;
         const Controller::CompletionInfo info = { id, true };
         _cntl->OnVersionedRPCReturned(info, false, saved_error);
     }
@@ -55,10 +55,6 @@ public:
 
     Socket* get_sending_socket() {
         return _cntl->_current_call.sending_sock.get();
-    }
-
-    int64_t real_timeout_ms() {
-        return _cntl->_real_timeout_ms;
     }
 
     void move_in_server_receiving_sock(SocketUniquePtr& ptr) {
@@ -75,12 +71,12 @@ public:
         return *this;
     }
 
-    ControllerPrivateAccessor &set_remote_side(const butil::EndPoint& pt) {
+    ControllerPrivateAccessor &set_remote_side(const sgxbutil::EndPoint& pt) {
         _cntl->_remote_side = pt;
         return *this;
     }
 
-    ControllerPrivateAccessor &set_local_side(const butil::EndPoint& pt) {
+    ControllerPrivateAccessor &set_local_side(const sgxbutil::EndPoint& pt) {
         _cntl->_local_side = pt;
         return *this;
     }
@@ -90,17 +86,12 @@ public:
         return *this;
     }
 
-    ControllerPrivateAccessor &set_span(Span* span) {
-        _cntl->_span = span;
-        return *this;
-    }
     
     ControllerPrivateAccessor &set_request_protocol(ProtocolType protocol) {
         _cntl->_request_protocol = protocol;
         return *this;
     }
     
-    Span* span() const { return _cntl->_span; }
 
     uint32_t pipelined_count() const { return _cntl->_pipelined_count; }
     void set_pipelined_count(uint32_t count) {  _cntl->_pipelined_count = count; }
@@ -110,29 +101,14 @@ public:
         return *this;
     }
 
-    // Pass the owership of |settings| to _cntl, while is going to be
-    // destroyed in Controller::Reset()
-    void set_remote_stream_settings(StreamSettings *settings) {
-        _cntl->_remote_stream_settings = settings;
-    }
-    StreamSettings* remote_stream_settings() {
-        return _cntl->_remote_stream_settings;
-    }
 
-    StreamId request_stream() { return _cntl->_request_stream; }
-    StreamId response_stream() { return _cntl->_response_stream; }
 
     void set_method(const google::protobuf::MethodDescriptor* method) 
     { _cntl->_method = method; }
 
-    void set_readable_progressive_attachment(ReadableProgressiveAttachment* s)
-    { _cntl->_rpa.reset(s); }
-
-    void set_auth_flags(uint32_t auth_flags) {
-        _cntl->_auth_flags = auth_flags;
+    void add_with_auth() {
+        _cntl->add_flag(Controller::FLAGS_REQUEST_WITH_AUTH);
     }
-
-    void clear_auth_flags() { _cntl->_auth_flags = 0; }
 
     std::string& protocol_param() { return _cntl->protocol_param(); }
     const std::string& protocol_param() const { return _cntl->protocol_param(); }
@@ -154,14 +130,6 @@ public:
 
 private:
     Controller* _cntl;
-};
-
-// Inherit this class to intercept Controller::IssueRPC. This is an internal
-// utility only useable by brpc developers.
-class RPCSender {
-public:
-    virtual ~RPCSender() {}
-    virtual int IssueRPC(int64_t start_realtime_us) = 0;
 };
 
 } // namespace brpc

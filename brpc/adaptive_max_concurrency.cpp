@@ -17,10 +17,11 @@
 
 #include <cstring>
 #include <strings.h>
-#include "butil/string_printf.h"
-#include "butil/logging.h"
-#include "butil/strings/string_number_conversions.h"
+#include "sgxbutil/string_printf.h"
+#include "sgxbutil/logging.h"
+#include "sgxbutil/strings/string_number_conversions.h"
 #include "brpc/adaptive_max_concurrency.h"
+#include "sgxbutil/strings/string_number_conversions.h"
 
 namespace brpc {
 
@@ -35,17 +36,13 @@ AdaptiveMaxConcurrency::AdaptiveMaxConcurrency(int max_concurrency)
         _value = UNLIMITED();
         _max_concurrency = 0;
     } else {
-        _value = butil::string_printf("%d", max_concurrency);
+        _value = sgxbutil::string_printf("%d", max_concurrency);
         _max_concurrency = max_concurrency;
     }
 }
 
-AdaptiveMaxConcurrency::AdaptiveMaxConcurrency(
-    const TimeoutConcurrencyConf& value)
-    : _value("timeout"), _max_concurrency(-1), _timeout_conf(value) {}
-
 inline bool CompareStringPieceWithoutCase(
-    const butil::StringPiece& s1, const char* s2) {
+    const sgxbutil::StringPiece& s1, const char* s2) {
     DCHECK(s2 != NULL);
     if (std::strlen(s2) != s1.size()) {
         return false;
@@ -53,10 +50,10 @@ inline bool CompareStringPieceWithoutCase(
     return ::strncasecmp(s1.data(), s2, s1.size()) == 0;
 }
 
-AdaptiveMaxConcurrency::AdaptiveMaxConcurrency(const butil::StringPiece& value)
+AdaptiveMaxConcurrency::AdaptiveMaxConcurrency(const sgxbutil::StringPiece& value)
     : _max_concurrency(0) {
     int max_concurrency = 0;
-    if (butil::StringToInt(value, &max_concurrency)) {
+    if (sgxbutil::StringToInt(value, &max_concurrency)) {
         operator=(max_concurrency);
     } else {
         value.CopyToString(&_value);
@@ -64,9 +61,9 @@ AdaptiveMaxConcurrency::AdaptiveMaxConcurrency(const butil::StringPiece& value)
     }
 }
 
-void AdaptiveMaxConcurrency::operator=(const butil::StringPiece& value) {
+void AdaptiveMaxConcurrency::operator=(const sgxbutil::StringPiece& value) {
     int max_concurrency = 0;
-    if (butil::StringToInt(value, &max_concurrency)) {
+    if (sgxbutil::StringToInt(value, &max_concurrency)) {
         return operator=(max_concurrency);
     } else {
         value.CopyToString(&_value);
@@ -79,15 +76,9 @@ void AdaptiveMaxConcurrency::operator=(int max_concurrency) {
         _value = UNLIMITED();
         _max_concurrency = 0;
     } else {
-        _value = butil::string_printf("%d", max_concurrency);
+        _value = sgxbutil::string_printf("%d", max_concurrency);
         _max_concurrency = max_concurrency;
     }
-}
-
-void AdaptiveMaxConcurrency::operator=(const TimeoutConcurrencyConf& value) {
-    _value = "timeout";
-    _max_concurrency = -1;
-    _timeout_conf = value;
 }
 
 const std::string& AdaptiveMaxConcurrency::type() const {
@@ -111,7 +102,7 @@ const std::string& AdaptiveMaxConcurrency::CONSTANT() {
 }
 
 bool operator==(const AdaptiveMaxConcurrency& adaptive_concurrency,
-                const butil::StringPiece& concurrency) {
+                const sgxbutil::StringPiece& concurrency) {
     return CompareStringPieceWithoutCase(concurrency, 
                                          adaptive_concurrency.value().c_str());
 }

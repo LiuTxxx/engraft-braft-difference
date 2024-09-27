@@ -54,7 +54,6 @@ protected:
 private:
 friend class InputMessenger;
 friend void* ProcessInputMessage(void*);
-friend class Stream;
     int64_t _received_us;
     int64_t _base_real_us;
     SocketUniquePtr _socket;

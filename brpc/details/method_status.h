@@ -19,8 +19,8 @@
 #ifndef  BRPC_METHOD_STATUS_H
 #define  BRPC_METHOD_STATUS_H
 
-#include "butil/macros.h"                  // DISALLOW_COPY_AND_ASSIGN
-#include "bvar/bvar.h"                    // vars
+#include "sgxbutil/macros.h"                  // DISALLOW_COPY_AND_ASSIGN
+// #include "bvar/bvar.h"                    // vars
 #include "brpc/describable.h"
 #include "brpc/concurrency_limiter.h"
 
@@ -38,7 +38,7 @@ public:
     // Call this function when the method is about to be called.
     // Returns false when the method is overloaded. If rejected_cc is not
     // NULL, it's set with the rejected concurrency.
-    bool OnRequested(int* rejected_cc = NULL, Controller* cntl = NULL);
+    bool OnRequested(int* rejected_cc = NULL);
 
     // Call this when the method just finished.
     // `error_code' : The error code obtained from the controller. Equal to 
@@ -50,7 +50,7 @@ public:
 
     // Expose internal vars.
     // Return 0 on success, -1 otherwise.
-    int Expose(const butil::StringPiece& prefix);
+    int Expose(const sgxbutil::StringPiece& prefix);
 
     // Describe internal vars, used by /status
     void Describe(std::ostream &os, const DescribeOptions&) const override;
@@ -67,12 +67,12 @@ friend class Server;
     void SetConcurrencyLimiter(ConcurrencyLimiter* cl);
 
     std::unique_ptr<ConcurrencyLimiter> _cl;
-    butil::atomic<int> _nconcurrency;
-    bvar::Adder<int64_t>  _nerror_bvar;
-    bvar::LatencyRecorder _latency_rec;
-    bvar::PassiveStatus<int>  _nconcurrency_bvar;
-    bvar::PerSecond<bvar::Adder<int64_t>> _eps_bvar;
-    bvar::PassiveStatus<int32_t> _max_concurrency_bvar;
+    sgxbutil::atomic<int> _nconcurrency;
+    // bvar::Adder<int64_t>  _nerror_bvar;
+    // bvar::LatencyRecorder _latency_rec;
+    // bvar::PassiveStatus<int>  _nconcurrency_bvar;
+    // bvar::PerSecond<bvar::Adder<int64_t>> _eps_bvar;
+    // bvar::PassiveStatus<int32_t> _max_concurrency_bvar;
 };
 
 class ConcurrencyRemover {
@@ -89,9 +89,9 @@ private:
     uint64_t _received_us;
 };
 
-inline bool MethodStatus::OnRequested(int* rejected_cc, Controller* cntl) {
-    const int cc = _nconcurrency.fetch_add(1, butil::memory_order_relaxed) + 1;
-    if (NULL == _cl || _cl->OnRequested(cc, cntl)) {
+inline bool MethodStatus::OnRequested(int* rejected_cc) {
+    const int cc = _nconcurrency.fetch_add(1, sgxbutil::memory_order_relaxed) + 1;
+    if (NULL == _cl || _cl->OnRequested(cc)) {
         return true;
     } 
     if (rejected_cc) {
@@ -101,11 +101,11 @@ inline bool MethodStatus::OnRequested(int* rejected_cc, Controller* cntl) {
 }
 
 inline void MethodStatus::OnResponded(int error_code, int64_t latency) {
-    _nconcurrency.fetch_sub(1, butil::memory_order_relaxed);
+    _nconcurrency.fetch_sub(1, sgxbutil::memory_order_relaxed);
     if (0 == error_code) {
-        _latency_rec << latency;
+        // _latency_rec << latency;
     } else {
-        _nerror_bvar << 1;
+        // _nerror_bvar << 1;
     }
     if (NULL != _cl) {
         _cl->OnResponded(error_code, latency);

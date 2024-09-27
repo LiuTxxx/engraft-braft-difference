@@ -25,9 +25,9 @@
 #include <mesalink/openssl/bio.h>
 #include <mesalink/openssl/evp.h>
 #include <mesalink/openssl/pem.h>
-#include "butil/unique_ptr.h"
-#include "butil/logging.h"
-#include "butil/string_splitter.h"
+#include <memory>
+#include "sgxbutil/logging.h"
+#include "sgxbutil/string_splitter.h"
 #include "brpc/socket.h"
 #include "brpc/ssl_options.h"
 #include "brpc/details/ssl_helper.h"
@@ -61,10 +61,10 @@ const char* SSLStateToString(SSLState s) {
 
 static int ParseSSLProtocols(const std::string& str_protocol) {
     int protocol_flag = 0;
-    butil::StringSplitter sp(str_protocol.data(),
+    sgxbutil::StringSplitter sp(str_protocol.data(),
                              str_protocol.data() + str_protocol.size(), ',');
     for (; sp; ++sp) {
-        butil::StringPiece protocol(sp.field(), sp.length());
+        sgxbutil::StringPiece protocol(sp.field(), sp.length());
         protocol.trim_spaces();
         if (strncasecmp(protocol.data(), "SSLv3", protocol.size()) == 0
             || strncasecmp(protocol.data(), "TLSv1", protocol.size()) == 0
@@ -208,7 +208,7 @@ static int LoadCertificate(SSL_CTX* ctx,
         return -1;
     }
     
-    // Load the main certificate
+    // Load the main certficate
     if (SSL_CTX_use_certificate(ctx, x.get()) != 1) {
         LOG(ERROR) << "Fail to load " << certificate << ": "
                    << SSLError(ERR_get_error());

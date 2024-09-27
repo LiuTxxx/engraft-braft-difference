@@ -19,8 +19,8 @@
 #ifndef BRPC_POLICY_MOST_COMMON_MESSAGE_H
 #define BRPC_POLICY_MOST_COMMON_MESSAGE_H
 
-#include "butil/object_pool.h"
 #include "brpc/input_messenger.h"
+#include "sgxbutil/object_pool.h"
 
 
 namespace brpc {
@@ -31,12 +31,12 @@ namespace policy {
 // you have to new the messages or use a separate ObjectPool (which is likely
 // to waste more memory)
 struct BAIDU_CACHELINE_ALIGNMENT MostCommonMessage : public InputMessageBase {
-    butil::IOBuf meta;
-    butil::IOBuf payload;
+    sgxbutil::IOBuf meta;
+    sgxbutil::IOBuf payload;
     PipelinedInfo pi;
 
     inline static MostCommonMessage* Get() {
-        return butil::get_object<MostCommonMessage>();
+        return sgxbutil::get_object<MostCommonMessage>();
     }
 
     // @InputMessageBase
@@ -44,7 +44,7 @@ struct BAIDU_CACHELINE_ALIGNMENT MostCommonMessage : public InputMessageBase {
         meta.clear();
         payload.clear();
         pi.reset();
-        butil::return_object(this);
+        sgxbutil::return_object(this);
     }
 };
 

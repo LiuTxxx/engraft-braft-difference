@@ -20,65 +20,47 @@
 #include <arpa/inet.h>                              // inet_aton
 #include <fcntl.h>                                  // O_CREAT
 #include <sys/stat.h>                               // mkdir
-#include <gflags/gflags.h>
-#include <google/protobuf/descriptor.h>             // ServiceDescriptor
-#include "idl_options.pb.h"                         // option(idl_support)
-#include "bthread/unstable.h"                       // bthread_keytable_pool_init
-#include "butil/macros.h"                            // ARRAY_SIZE
-#include "butil/fd_guard.h"                          // fd_guard
-#include "butil/logging.h"                           // CHECK
-#include "butil/time.h"
-#include "butil/class_name.h"
-#include "butil/string_printf.h"
+#include "google/gflags/gflags.h"
+#include "google/protobuf/descriptor.h"             // ServiceDescriptor
+// #include "idl_options.pb.h"                         // option(idl_support)
+#include "sgxbutil/macros.h"                            // ARRAY_SIZE
+#include "sgxbutil/fd_guard.h"                          // fd_guard
+#include "sgxbutil/logging.h"                           // CHECK
+#include "sgxbutil/time.h"
+#include "sgxbutil/string_printf.h"
 #include "brpc/log.h"
 #include "brpc/compress.h"
-#include "brpc/policy/nova_pbrpc_protocol.h"
 #include "brpc/global.h"
 #include "brpc/socket_map.h"                   // SocketMapList
 #include "brpc/acceptor.h"                     // Acceptor
 #include "brpc/details/ssl_helper.h"           // CreateServerSSLContext
 #include "brpc/protocol.h"                     // ListProtocols
-#include "brpc/nshead_service.h"               // NsheadService
-#ifdef ENABLE_THRIFT_FRAMED_PROTOCOL
-#include "brpc/thrift_service.h"               // ThriftService
-#endif
-#include "brpc/builtin/bad_method_service.h"   // BadMethodService
-#include "brpc/builtin/get_favicon_service.h"
-#include "brpc/builtin/get_js_service.h"
-#include "brpc/builtin/grpc_health_check_service.h"  // GrpcHealthCheckService
-#include "brpc/builtin/version_service.h"
-#include "brpc/builtin/health_service.h"
-#include "brpc/builtin/list_service.h"
-#include "brpc/builtin/status_service.h"
-#include "brpc/builtin/protobufs_service.h"
-#include "brpc/builtin/threads_service.h"
-#include "brpc/builtin/vlog_service.h"
-#include "brpc/builtin/index_service.h"        // IndexService
-#include "brpc/builtin/connections_service.h"  // ConnectionsService
-#include "brpc/builtin/flags_service.h"        // FlagsService
-#include "brpc/builtin/vars_service.h"         // VarsService
-#include "brpc/builtin/rpcz_service.h"         // RpczService
-#include "brpc/builtin/dir_service.h"          // DirService
-#include "brpc/builtin/pprof_service.h"        // PProfService
-#include "brpc/builtin/bthreads_service.h"     // BthreadsService
-#include "brpc/builtin/ids_service.h"          // IdsService
-#include "brpc/builtin/sockets_service.h"      // SocketsService
-#include "brpc/builtin/hotspots_service.h"     // HotspotsService
-#include "brpc/builtin/prometheus_metrics_service.h"
-#include "brpc/builtin/memory_service.h"
+// #include "brpc/builtin/bad_method_service.h"   // BadMethodService
+// #include "brpc/builtin/get_favicon_service.h"
+// #include "brpc/builtin/get_js_service.h"
+// #include "brpc/builtin/version_service.h"
+// #include "brpc/builtin/health_service.h"
+// #include "brpc/builtin/list_service.h"
+// #include "brpc/builtin/status_service.h"
+// #include "brpc/builtin/protobufs_service.h"
+// #include "brpc/builtin/threads_service.h"
+// #include "brpc/builtin/vlog_service.h"
+// #include "brpc/builtin/index_service.h"        // IndexService
+// #include "brpc/builtin/connections_service.h"  // ConnectionsService
+// #include "brpc/builtin/flags_service.h"        // FlagsService
+// #include "brpc/builtin/vars_service.h"         // VarsService
+// #include "brpc/builtin/dir_service.h"          // DirService
+// #include "brpc/builtin/pprof_service.h"        // PProfService
+// #include "brpc/builtin/bthreads_service.h"     // BthreadsService
+// #include "brpc/builtin/ids_service.h"          // IdsService
+// #include "brpc/builtin/sockets_service.h"      // SocketsService
+// #include "brpc/builtin/hotspots_service.h"     // HotspotsService
+// #include "brpc/builtin/prometheus_metrics_service.h"
 #include "brpc/details/method_status.h"
-#include "brpc/load_balancer.h"
-#include "brpc/naming_service.h"
-#include "brpc/simple_data_pool.h"
 #include "brpc/server.h"
-#include "brpc/trackme.h"
 #include "brpc/restful.h"
-#include "brpc/rtmp.h"
-#include "brpc/builtin/common.h"               // GetProgramName
-#include "brpc/details/tcmalloc_extension.h"
-#include "brpc/rdma/rdma_helper.h"
-#include "brpc/baidu_master_service.h"
-
+// #include "brpc/builtin/common.h"               // GetProgramName
+// #include "brpc/details/tcmalloc_extension.h"
 inline std::ostream& operator<<(std::ostream& os, const timeval& tm) {
     const char old_fill = os.fill();
     os << tm.tv_sec << '.' << std::setw(6) << std::setfill('0') << tm.tv_usec;
@@ -86,15 +68,9 @@ inline std::ostream& operator<<(std::ostream& os, const timeval& tm) {
     return os;
 }
 
-extern "C" {
-void* bthread_get_assigned_data();
-}
-
-DECLARE_int32(task_group_ntags);
-
 namespace brpc {
 
-BAIDU_CASSERT(sizeof(int32_t) == sizeof(butil::subtle::Atomic32),
+BAIDU_CASSERT(sizeof(int32_t) == sizeof(sgxbutil::subtle::Atomic32),
               Atomic32_must_be_int32);
 
 extern const char* const g_server_info_prefix = "rpc_server";
@@ -109,14 +85,14 @@ const char* status_str(Server::Status s) {
     return "UNKNOWN_STATUS";
 }
 
-butil::static_atomic<int> g_running_server_count = BUTIL_STATIC_ATOMIC_INIT(0);
+//- Only 1 server exists in a braft node
+sgxbutil::static_atomic<int> g_running_server_count = BUTIL_STATIC_ATOMIC_INIT(0);
 
 // Following services may have security issues and are disabled by default.
 DEFINE_bool(enable_dir_service, false, "Enable /dir");
 DEFINE_bool(enable_threads_service, false, "Enable /threads");
 
 DECLARE_int32(usercode_backup_threads);
-DECLARE_bool(usercode_in_pthread);
 
 const int INITIAL_SERVICE_CAP = 64;
 const int INITIAL_CERT_MAP = 64;
@@ -126,33 +102,14 @@ const int s_ncore = sysconf(_SC_NPROCESSORS_ONLN);
 
 ServerOptions::ServerOptions()
     : idle_timeout_sec(-1)
-    , nshead_service(NULL)
-    , thrift_service(NULL)
-    , mongo_service_adaptor(NULL)
     , auth(NULL)
     , server_owns_auth(false)
-    , interceptor(NULL)
-    , server_owns_interceptor(false)
     , num_threads(8)
     , max_concurrency(0)
-    , session_local_data_factory(NULL)
-    , reserved_session_local_data(0)
-    , thread_local_data_factory(NULL)
-    , reserved_thread_local_data(0)
-    , bthread_init_fn(NULL)
-    , bthread_init_args(NULL)
-    , bthread_init_count(0)
     , internal_port(-1)
     , has_builtin_services(true)
-    , force_ssl(false)
-    , use_rdma(false)
-    , baidu_master_service(NULL)
     , http_master_service(NULL)
-    , health_reporter(NULL)
-    , rtmp_service(NULL)
-    , redis_service(NULL)
-    , bthread_tag(BTHREAD_TAG_INVALID)
-    , rpc_pb_message_factory(new DefaultRpcPBMessageFactory()) {
+    {
     if (s_ncore > 0) {
         num_threads = s_ncore + 1;
     }
@@ -167,10 +124,8 @@ ServerSSLOptions* ServerOptions::mutable_ssl_options() {
 
 Server::MethodProperty::OpaqueParams::OpaqueParams()
     : is_tabbed(false)
-    , allow_default_url(false)
     , allow_http_body_to_pb(true)
-    , pb_bytes_to_base64(false)
-    , pb_single_repeated_to_array(false) {
+    , pb_bytes_to_base64(false) {
 }
 
 Server::MethodProperty::MethodProperty()
@@ -183,7 +138,7 @@ Server::MethodProperty::MethodProperty()
 }
 
 static timeval GetUptime(void* arg/*start_time*/) {
-    return butil::microseconds_to_timeval(butil::cpuwide_time_us() - (intptr_t)arg);
+    return sgxbutil::microseconds_to_timeval(sgxbutil::cpuwide_time_us() - (intptr_t)arg);
 }
 
 static void PrintStartTime(std::ostream& os, void* arg) {
@@ -196,13 +151,7 @@ static void PrintStartTime(std::ostream& os, void* arg) {
     os << buf;
 }
 
-static void PrintSupportedLB(std::ostream& os, void*) {
-    LoadBalancerExtension()->List(os, ' ');
-}
 
-static void PrintSupportedNS(std::ostream& os, void*) {
-    NamingServiceExtension()->List(os, ' ');
-}
 
 static void PrintSupportedProtocols(std::ostream& os, void*) {
     std::vector<Protocol> protocols;
@@ -227,33 +176,29 @@ static void PrintSupportedCompressions(std::ostream& os, void*) {
 }
 
 static void PrintEnabledProfilers(std::ostream& os, void*) {
-    if (cpu_profiler_enabled) {
-        os << "cpu ";
-    }
-    if (IsHeapProfilerEnabled()) {
-        if (has_TCMALLOC_SAMPLE_PARAMETER()) {
-            os << "heap ";
-        } else {
-            os << "heap(no TCMALLOC_SAMPLE_PARAMETER in env) ";
-        }
-    }
+    // if (cpu_profiler_enabled) {
+    //     os << "cpu ";
+    // }
+    // if (IsHeapProfilerEnabled()) {
+    //     if (has_TCMALLOC_SAMPLE_PARAMETER()) {
+    //         os << "heap ";
+    //     } else {
+    //         os << "heap(no TCMALLOC_SAMPLE_PARAMETER in env) ";
+    //     }
+    // }
     os << "contention";
 }
 
-static bvar::PassiveStatus<std::string> s_lb_st(
-    "rpc_load_balancer", PrintSupportedLB, NULL);
 
-static bvar::PassiveStatus<std::string> s_ns_st(
-    "rpc_naming_service", PrintSupportedNS, NULL);
 
-static bvar::PassiveStatus<std::string> s_proto_st(
-    "rpc_protocols", PrintSupportedProtocols, NULL);
+// static bvar::PassiveStatus<std::string> s_proto_st(
+//     "rpc_protocols", PrintSupportedProtocols, NULL);
 
-static bvar::PassiveStatus<std::string> s_comp_st(
-    "rpc_compressions", PrintSupportedCompressions, NULL);
+// static bvar::PassiveStatus<std::string> s_comp_st(
+//     "rpc_compressions", PrintSupportedCompressions, NULL);
 
-static bvar::PassiveStatus<std::string> s_prof_st(
-    "rpc_profilers", PrintEnabledProfilers, NULL);
+// static bvar::PassiveStatus<std::string> s_prof_st(
+//     "rpc_profilers", PrintEnabledProfilers, NULL);
 
 static int32_t GetConnectionCount(void* arg) {
     ServerStatistics ss;
@@ -273,62 +218,36 @@ static int32_t GetBuiltinServiceCount(void* arg) {
     return ss.builtin_service_count;
 }
 
-static bvar::Vector<unsigned, 2> GetSessionLocalDataCount(void* arg) {
-    bvar::Vector<unsigned, 2> v;
-    SimpleDataPool::Stat s =
-        static_cast<Server*>(arg)->session_local_data_pool()->stat();
-    v[0] = s.ncreated - s.nfree;
-    v[1] = s.nfree;
-    return v;
-}
-
-static int cast_no_barrier_int(void* arg) {
-    return butil::subtle::NoBarrier_Load(static_cast<int*>(arg));
-}
 
 std::string Server::ServerPrefix() const {
-    if(_options.server_info_name.empty()) {
-        return butil::string_printf("%s_%d", g_server_info_prefix, listen_address().port);
-    } else {
-        return std::string(g_server_info_prefix) + "_" + _options.server_info_name;
-    }
+    return sgxbutil::string_printf("%s_%d", g_server_info_prefix, listen_address().port);
 }
 
-void* Server::UpdateDerivedVars(void* arg) {
-    const int64_t start_us = butil::cpuwide_time_us();
+void* Server::UpdateDerivedVars(void* arg) {    
+    const int64_t start_us = sgxbutil::cpuwide_time_us();
 
     Server* server = static_cast<Server*>(arg);
     const std::string prefix = server->ServerPrefix();
     std::vector<SocketId> conns;
     std::vector<SocketId> internal_conns;
 
-    server->_nerror_bvar.expose_as(prefix, "error");
+    // server->_nerror_bvar.expose_as(prefix, "error"); //- Remove bvar
 
-    server->_eps_bvar.expose_as(prefix, "eps");
+    // bvar::PassiveStatus<timeval> uptime_st(
+    //     prefix, "uptime", GetUptime, (void*)(intptr_t)start_us);
 
-    server->_concurrency_bvar.expose_as(prefix, "concurrency");
+    // bvar::PassiveStatus<std::string> start_time_st(
+    //     prefix, "start_time", PrintStartTime, server);
 
-    bvar::PassiveStatus<timeval> uptime_st(
-        prefix, "uptime", GetUptime, (void*)(intptr_t)start_us);
+    // bvar::PassiveStatus<int32_t> nconn_st(
+    //     prefix, "connection_count", GetConnectionCount, server);
 
-    bvar::PassiveStatus<std::string> start_time_st(
-        prefix, "start_time", PrintStartTime, server);
+    // bvar::PassiveStatus<int32_t> nservice_st(
+    //     prefix, "service_count", GetServiceCount, server);
 
-    bvar::PassiveStatus<int32_t> nconn_st(
-        prefix, "connection_count", GetConnectionCount, server);
+    // bvar::PassiveStatus<int32_t> nbuiltinservice_st(
+    //     prefix, "builtin_service_count", GetBuiltinServiceCount, server);
 
-    bvar::PassiveStatus<int32_t> nservice_st(
-        prefix, "service_count", GetServiceCount, server);
-
-    bvar::PassiveStatus<int32_t> nbuiltinservice_st(
-        prefix, "builtin_service_count", GetBuiltinServiceCount, server);
-
-    bvar::PassiveStatus<bvar::Vector<unsigned, 2> > nsessiondata_st(
-        GetSessionLocalDataCount, server);
-    if (server->session_local_data_pool()) {
-        nsessiondata_st.expose_as(prefix, "session_local_data_count");
-        nsessiondata_st.set_vector_names("using,free");
-    }
 
     std::string mprefix = prefix;
     for (MethodMap::iterator it = server->_method_map.begin();
@@ -337,27 +256,16 @@ void* Server::UpdateDerivedVars(void* arg) {
         if (!it->second.is_builtin_service) {
             mprefix.resize(prefix.size());
             mprefix.push_back('_');
-            bvar::to_underscored_name(&mprefix, it->second.method->full_name());
+            // bvar::to_underscored_name(&mprefix, it->second.method->full_name());
             it->second.status->Expose(mprefix);
         }
     }
-    if (server->options().baidu_master_service) {
-        server->options().baidu_master_service->Expose(prefix);
-    }
-    if (server->options().nshead_service) {
-        server->options().nshead_service->Expose(prefix);
-    }
 
-#ifdef ENABLE_THRIFT_FRAMED_PROTOCOL
-    if (server->options().thrift_service) {
-        server->options().thrift_service->Expose(prefix);
-    }
-#endif
 
-    int64_t last_time = butil::gettimeofday_us();
+    int64_t last_time = sgxbutil::gettimeofday_us();
     int consecutive_nosleep = 0;
     while (1) {
-        const int64_t sleep_us = 1000000L + last_time - butil::gettimeofday_us();
+        const int64_t sleep_us = 1000000L + last_time - sgxbutil::gettimeofday_us();
         if (sleep_us < 1000L) {
             if (++consecutive_nosleep >= 2) {
                 consecutive_nosleep = 0;
@@ -370,7 +278,7 @@ void* Server::UpdateDerivedVars(void* arg) {
                 return NULL;
             }
         }
-        last_time = butil::gettimeofday_us();
+        last_time = sgxbutil::gettimeofday_us();
 
         // Update stats of accepted sockets.
         if (server->_am) {
@@ -379,7 +287,7 @@ void* Server::UpdateDerivedVars(void* arg) {
         if (server->_internal_am) {
             server->_internal_am->ListConnections(&internal_conns);
         }
-        const int64_t now_ms = butil::cpuwide_time_ms();
+        const int64_t now_ms = sgxbutil::cpuwide_time_ms();
         for (size_t i = 0; i < conns.size(); ++i) {
             SocketUniquePtr ptr;
             if (Socket::Address(conns[i], &ptr) == 0) {
@@ -406,8 +314,7 @@ const std::string& Server::ServiceProperty::service_name() const {
 }
 
 Server::Server(ProfilerLinker)
-    : _session_local_data_pool(NULL)
-    , _status(UNINITIALIZED)
+    : _status(UNINITIALIZED)
     , _builtin_service_count(0)
     , _virtual_service_count(0)
     , _failed_to_set_max_concurrency_of_method(false)
@@ -417,12 +324,8 @@ Server::Server(ProfilerLinker)
     , _tab_info_list(NULL)
     , _global_restful_map(NULL)
     , _last_start_time(0)
-    , _derivative_thread(INVALID_BTHREAD)
-    , _keytable_pool(NULL)
-    , _eps_bvar(&_nerror_bvar)
-    , _concurrency(0)
-    , _concurrency_bvar(cast_no_barrier_int, &_concurrency)
-    ,_has_progressive_read_method(false) {
+    , _derivative_thread(0)
+    , _concurrency(0) {
     BAIDU_CASSERT(offsetof(Server, _concurrency) % 64 == 0,
                   Server_concurrency_must_be_aligned_by_cacheline);
 }
@@ -433,25 +336,8 @@ Server::~Server() {
     ClearServices();
     FreeSSLContexts();
 
-    delete _session_local_data_pool;
-    _session_local_data_pool = NULL;
-
-    delete _options.nshead_service;
-    _options.nshead_service = NULL;
-
-#ifdef ENABLE_THRIFT_FRAMED_PROTOCOL
-    delete _options.thrift_service;
-    _options.thrift_service = NULL;
-#endif
-
-    delete _options.baidu_master_service;
-    _options.baidu_master_service = NULL;
-
     delete _options.http_master_service;
     _options.http_master_service = NULL;
-
-    delete _options.rpc_pb_message_factory;
-    _options.rpc_pb_message_factory = NULL;
 
     delete _am;
     _am = NULL;
@@ -471,121 +357,104 @@ Server::~Server() {
         delete _options.auth;
         _options.auth = NULL;
     }
-    if (_options.server_owns_interceptor) {
-        delete _options.interceptor;
-        _options.interceptor = NULL;
-    }
 
-    delete _options.redis_service;
-    _options.redis_service = NULL;
 }
-
+//- We don't need these services in sgx-braft
 int Server::AddBuiltinServices() {
     // Firstly add services shown in tabs.
-    if (AddBuiltinService(new (std::nothrow) StatusService)) {
-        LOG(ERROR) << "Fail to add StatusService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) VarsService)) {
-        LOG(ERROR) << "Fail to add VarsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) ConnectionsService)) {
-        LOG(ERROR) << "Fail to add ConnectionsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) FlagsService)) {
-        LOG(ERROR) << "Fail to add FlagsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) RpczService)) {
-        LOG(ERROR) << "Fail to add RpczService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) HotspotsService)) {
-        LOG(ERROR) << "Fail to add HotspotsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) IndexService)) {
-        LOG(ERROR) << "Fail to add IndexService";
-        return -1;
-    }
+    // if (AddBuiltinService(new (std::nothrow) StatusService)) {
+    //     LOG(ERROR) << "Fail to add StatusService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) VarsService)) {
+    //     LOG(ERROR) << "Fail to add VarsService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) ConnectionsService)) {
+    //     LOG(ERROR) << "Fail to add ConnectionsService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) FlagsService)) {
+    //     LOG(ERROR) << "Fail to add FlagsService";
+    //     return -1;
+    // }
+
+    // if (AddBuiltinService(new (std::nothrow) HotspotsService)) {
+    //     LOG(ERROR) << "Fail to add HotspotsService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) IndexService)) {
+    //     LOG(ERROR) << "Fail to add IndexService";
+    //     return -1;
+    // }
 
     // Add other services.
-    if (AddBuiltinService(new (std::nothrow) VersionService(this))) {
-        LOG(ERROR) << "Fail to add VersionService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) HealthService)) {
-        LOG(ERROR) << "Fail to add HealthService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) ProtobufsService(this))) {
-        LOG(ERROR) << "Fail to add ProtobufsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) BadMethodService)) {
-        LOG(ERROR) << "Fail to add BadMethodService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) ListService(this))) {
-        LOG(ERROR) << "Fail to add ListService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) PrometheusMetricsService)) {
-        LOG(ERROR) << "Fail to add MetricsService";
-        return -1;
-    }
-    if (FLAGS_enable_threads_service &&
-        AddBuiltinService(new (std::nothrow) ThreadsService)) {
-        LOG(ERROR) << "Fail to add ThreadsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) MemoryService)) {
-        LOG(ERROR) << "Fail to add MemoryService";
-        return -1;
-    }
+    // if (AddBuiltinService(new (std::nothrow) VersionService(this))) {
+    //     LOG(ERROR) << "Fail to add VersionService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) HealthService)) {
+    //     LOG(ERROR) << "Fail to add HealthService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) ProtobufsService(this))) {
+    //     LOG(ERROR) << "Fail to add ProtobufsService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) BadMethodService)) {
+    //     LOG(ERROR) << "Fail to add BadMethodService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) ListService(this))) {
+    //     LOG(ERROR) << "Fail to add ListService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) PrometheusMetricsService)) {
+    //     LOG(ERROR) << "Fail to add MetricsService";
+    //     return -1;
+    // }
+    // if (FLAGS_enable_threads_service &&
+    //     AddBuiltinService(new (std::nothrow) ThreadsService)) {
+    //     LOG(ERROR) << "Fail to add ThreadsService";
+    //     return -1;
+    // }
 
-#if !BRPC_WITH_GLOG
-    if (AddBuiltinService(new (std::nothrow) VLogService)) {
-        LOG(ERROR) << "Fail to add VLogService";
-        return -1;
-    }
-#endif
+// #if !BRPC_WITH_GLOG
+//     if (AddBuiltinService(new (std::nothrow) VLogService)) {
+//         LOG(ERROR) << "Fail to add VLogService";
+//         return -1;
+//     }
+// #endif
 
-    if (AddBuiltinService(new (std::nothrow) PProfService)) {
-        LOG(ERROR) << "Fail to add PProfService";
-        return -1;
-    }
-    if (FLAGS_enable_dir_service &&
-        AddBuiltinService(new (std::nothrow) DirService)) {
-        LOG(ERROR) << "Fail to add DirService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) BthreadsService)) {
-        LOG(ERROR) << "Fail to add BthreadsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) IdsService)) {
-        LOG(ERROR) << "Fail to add IdsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) SocketsService)) {
-        LOG(ERROR) << "Fail to add SocketsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) GetFaviconService)) {
-        LOG(ERROR) << "Fail to add GetFaviconService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) GetJsService)) {
-        LOG(ERROR) << "Fail to add GetJsService";
-        return -1;
-    }
-    if (AddBuiltinService(new (std::nothrow) GrpcHealthCheckService)) {
-        LOG(ERROR) << "Fail to add GrpcHealthCheckService";
-        return -1;
-    }
+    // if (AddBuiltinService(new (std::nothrow) PProfService)) {
+    //     LOG(ERROR) << "Fail to add PProfService";
+    //     return -1;
+    // }
+    // if (FLAGS_enable_dir_service &&
+    //     AddBuiltinService(new (std::nothrow) DirService)) {
+    //     LOG(ERROR) << "Fail to add DirService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) BthreadsService)) {
+    //     LOG(ERROR) << "Fail to add BthreadsService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) IdsService)) {
+    //     LOG(ERROR) << "Fail to add IdsService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) SocketsService)) {
+    //     LOG(ERROR) << "Fail to add SocketsService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) GetFaviconService)) {
+    //     LOG(ERROR) << "Fail to add GetFaviconService";
+    //     return -1;
+    // }
+    // if (AddBuiltinService(new (std::nothrow) GetJsService)) {
+    //     LOG(ERROR) << "Fail to add GetJsService";
+    //     return -1;
+    // }
     return 0;
 }
 
@@ -598,13 +467,13 @@ bool is_http_protocol(const char* name) {
 
 Acceptor* Server::BuildAcceptor() {
     std::set<std::string> whitelist;
-    for (butil::StringSplitter sp(_options.enabled_protocols.c_str(), ' ');
+    for (sgxbutil::StringSplitter sp(_options.enabled_protocols.c_str(), ' ');
          sp; ++sp) {
         std::string protocol(sp.field(), sp.length());
         whitelist.insert(protocol);
     }
     const bool has_whitelist = !whitelist.empty();
-    Acceptor* acceptor = new (std::nothrow) Acceptor(_keytable_pool);
+    Acceptor* acceptor = new (std::nothrow) Acceptor();
     if (NULL == acceptor) {
         LOG(ERROR) << "Fail to new Acceptor";
         return NULL;
@@ -681,56 +550,7 @@ int Server::InitializeOnce() {
     return 0;
 }
 
-int Server::InitALPNOptions(const ServerSSLOptions* options) {
-    if (options == nullptr) {
-        LOG(ERROR) << "Fail to init alpn options, ssl options is nullptr.";
-        return -1;
-    }   
 
-    std::string raw_protocol;
-    const std::string& alpns = options->alpns;
-    for (butil::StringSplitter split(alpns.data(), ','); split; ++split) {
-        butil::StringPiece alpn(split.field(), split.length());
-        alpn.trim_spaces();
-
-        // Check protocol valid(exist and server support)
-        AdaptiveProtocolType protocol_type(alpn);
-        const Protocol* protocol = FindProtocol(protocol_type);
-        if (protocol == nullptr || !protocol->support_server()) {
-            LOG(ERROR) << "Server does not support alpn=" << alpn;
-            return -1;
-        }
-        raw_protocol.append(ALPNProtocolToString(protocol_type));
-    }
-    _raw_alpns = std::move(raw_protocol);
-    return 0;
-}
-
-static void* CreateServerTLS(const void* args) {
-    return static_cast<const DataFactory*>(args)->CreateData();
-}
-static void DestroyServerTLS(void* data, const void* void_factory) {
-    static_cast<const DataFactory*>(void_factory)->DestroyData(data);
-}
-
-struct BthreadInitArgs {
-    bool (*bthread_init_fn)(void* args); // default: NULL (do nothing)
-    void* bthread_init_args;             // default: NULL
-    bool result;
-    bool done;
-    bool stop;
-    bthread_t th;
-};
-
-static void* BthreadInitEntry(void* void_args) {
-    BthreadInitArgs* args = (BthreadInitArgs*)void_args;
-    args->result = args->bthread_init_fn(args->bthread_init_args);
-    args->done = true;
-    while (!args->stop) {
-        bthread_usleep(1000);
-    }
-    return NULL;
-}
 
 struct RevertServerStatus {
     inline void operator()(Server* s) const {
@@ -750,8 +570,8 @@ static int get_port_from_fd(int fd) {
     return ntohs(addr.sin_port);
 }
 
-bool Server::CreateConcurrencyLimiter(const AdaptiveMaxConcurrency& amc,
-                                      ConcurrencyLimiter** out) {
+static bool CreateConcurrencyLimiter(const AdaptiveMaxConcurrency& amc,
+                                     ConcurrencyLimiter** out) {
     if (amc.type() == AdaptiveMaxConcurrency::UNLIMITED()) {
         *out = NULL;
         return true;
@@ -771,31 +591,9 @@ bool Server::CreateConcurrencyLimiter(const AdaptiveMaxConcurrency& amc,
     return true;
 }
 
-#if BRPC_WITH_RDMA
-static bool OptionsAvailableOverRdma(const ServerOptions* opt) {
-    if (opt->rtmp_service) {
-        LOG(WARNING) << "RTMP is not supported by RDMA";
-        return false;
-    }
-    if (opt->has_ssl_options()) {
-        LOG(WARNING) << "SSL is not supported by RDMA";
-        return false;
-    }
-    if (opt->nshead_service) {
-        LOG(WARNING) << "NSHEAD is not supported by RDMA";
-        return false;
-    }
-    if (opt->mongo_service_adaptor) {
-        LOG(WARNING) << "MONGO is not supported by RDMA";
-        return false;
-    }
-    return true;
-}
-#endif
-
 static AdaptiveMaxConcurrency g_default_max_concurrency_of_method(0);
 
-int Server::StartInternal(const butil::EndPoint& endpoint,
+int Server::StartInternal(const sgxbutil::ip_t& ip,
                           const PortRange& port_range,
                           const ServerOptions *opt) {
     std::unique_ptr<Server, RevertServerStatus> revert_server(this);
@@ -833,29 +631,6 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
         return -1;
     }
 
-    if (_options.use_rdma) {
-#if BRPC_WITH_RDMA
-        if (!OptionsAvailableOverRdma(&_options)) {
-            return -1;
-        }
-        rdma::GlobalRdmaInitializeOrDie();
-#else
-        LOG(WARNING) << "Cannot use rdma since brpc does not compile with rdma";
-        return -1;
-#endif
-    }
-
-    auto original_bthread_tag = _options.bthread_tag;
-    if (original_bthread_tag == BTHREAD_TAG_INVALID) {
-        _options.bthread_tag = BTHREAD_TAG_DEFAULT;
-    }
-    if (_options.bthread_tag < BTHREAD_TAG_DEFAULT ||
-        _options.bthread_tag >= FLAGS_task_group_ntags) {
-        LOG(ERROR) << "Fail to set tag " << _options.bthread_tag << ", tag range is ["
-                   << BTHREAD_TAG_DEFAULT << ":" << FLAGS_task_group_ntags << ")";
-        return -1;
-    }
-
     if (_options.http_master_service) {
         // Check requirements for http_master_service:
         //  has "default_method" & request/response have no fields
@@ -883,109 +658,21 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
     //   Following code may run multiple times if this server is started and
     //   stopped more than once. Reuse or delete previous resources!
 
-    if (_options.session_local_data_factory) {
-        if (_session_local_data_pool == NULL) {
-            _session_local_data_pool =
-                new (std::nothrow) SimpleDataPool(_options.session_local_data_factory);
-            if (NULL == _session_local_data_pool) {
-                LOG(ERROR) << "Fail to new SimpleDataPool";
-                return -1;
-            }
-        } else {
-            _session_local_data_pool->Reset(_options.session_local_data_factory);
-        }
-        _session_local_data_pool->Reserve(_options.reserved_session_local_data);
-    }
 
-    // Init _keytable_pool always. If the server was stopped before, the pool
-    // should be destroyed in Join().
-    _keytable_pool = new bthread_keytable_pool_t;
-    if (bthread_keytable_pool_init(_keytable_pool) != 0) {
-        LOG(ERROR) << "Fail to init _keytable_pool";
-        delete _keytable_pool;
-        _keytable_pool = NULL;
-        return -1;
-    }
-
-    if (_options.thread_local_data_factory) {
-        _tl_options.thread_local_data_factory = _options.thread_local_data_factory;
-        if (bthread_key_create2(&_tl_options.tls_key, DestroyServerTLS,
-                                _options.thread_local_data_factory) != 0) {
-            LOG(ERROR) << "Fail to create thread-local key";
-            return -1;
-        }
-        if (_options.reserved_thread_local_data) {
-            bthread_keytable_pool_reserve(_keytable_pool,
-                                          _options.reserved_thread_local_data,
-                                          _tl_options.tls_key,
-                                          CreateServerTLS,
-                                          _options.thread_local_data_factory);
-        }
-    } else {
-        _tl_options = ThreadLocalOptions();
-    }
-
-    if (_options.bthread_init_count != 0 &&
-        _options.bthread_init_fn != NULL) {
-        // Create some special bthreads to call the init functions. The
-        // bthreads will not quit until all bthreads finish the init function.
-        BthreadInitArgs* init_args
-            = new BthreadInitArgs[_options.bthread_init_count];
-        size_t ncreated = 0;
-        for (size_t i = 0; i < _options.bthread_init_count; ++i, ++ncreated) {
-            init_args[i].bthread_init_fn = _options.bthread_init_fn;
-            init_args[i].bthread_init_args = _options.bthread_init_args;
-            init_args[i].result = false;
-            init_args[i].done = false;
-            init_args[i].stop = false;
-            bthread_attr_t tmp = BTHREAD_ATTR_NORMAL;
-            tmp.tag = _options.bthread_tag;
-            tmp.keytable_pool = _keytable_pool;
-            if (bthread_start_background(
-                    &init_args[i].th, &tmp, BthreadInitEntry, &init_args[i]) != 0) {
-                break;
-            }
-        }
-        // Wait until all created bthreads finish the init function.
-        for (size_t i = 0; i < ncreated; ++i) {
-            while (!init_args[i].done) {
-                bthread_usleep(1000);
-            }
-        }
-        // Stop and join created bthreads.
-        for (size_t i = 0; i < ncreated; ++i) {
-            init_args[i].stop = true;
-        }
-        for (size_t i = 0; i < ncreated; ++i) {
-            bthread_join(init_args[i].th, NULL);
-        }
-        size_t num_failed_result = 0;
-        for (size_t i = 0; i < ncreated; ++i) {
-            if (!init_args[i].result) {
-                ++num_failed_result;
-            }
-        }
-        delete [] init_args;
-        if (ncreated != _options.bthread_init_count) {
-            LOG(ERROR) << "Fail to create "
-                       << _options.bthread_init_count - ncreated << " bthreads";
-            return -1;
-        }
-        if (num_failed_result != 0) {
-            LOG(ERROR) << num_failed_result << " bthread_init_fn failed";
-            return -1;
-        }
-    }
 
     // Free last SSL contexts
     FreeSSLContexts();
+#ifdef SGX_USE_REMOTE_ATTESTATION
+    //- Always open SSL
     if (_options.has_ssl_options()) {
-
-        // Change ServerSSLOptions.alpns to _raw_alpns.
-        // AddCertificate function maybe access raw_alpns variable.
-        if (InitALPNOptions(_options.mutable_ssl_options()) != 0) {
+        CertInfo& default_cert = _options.mutable_ssl_options()->default_cert;
+        if (AddCertificate(default_cert) != 0) {
             return -1;
         }
+        _default_ssl_ctx = _ssl_ctx_map.begin()->second.ctx;
+    }
+#else
+    if (_options.has_ssl_options()) {
         CertInfo& default_cert = _options.mutable_ssl_options()->default_cert;
         if (default_cert.certificate.empty()) {
             LOG(ERROR) << "default_cert is empty";
@@ -1002,11 +689,8 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
                 return -1;
             }
         }
-    } else if (_options.force_ssl) {
-        LOG(ERROR) << "Fail to force SSL for all connections "
-                      "without ServerOptions.ssl_options";
-        return -1;
     }
+#endif
 
     _concurrency = 0;
 
@@ -1037,17 +721,10 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
     }
 
     if (_options.num_threads > 0) {
-        if (FLAGS_usercode_in_pthread) {
-            _options.num_threads += FLAGS_usercode_backup_threads;
-        }
-        if (_options.num_threads < BTHREAD_MIN_CONCURRENCY) {
-            _options.num_threads = BTHREAD_MIN_CONCURRENCY;
-        }
-        if (original_bthread_tag == BTHREAD_TAG_INVALID) {
-            bthread_setconcurrency(_options.num_threads);
-        } else {
-            bthread_setconcurrency_by_tag(_options.num_threads, _options.bthread_tag);
-        }
+        // if (_options.num_threads < BTHREAD_MIN_CONCURRENCY) {
+        //     _options.num_threads = BTHREAD_MIN_CONCURRENCY;
+        // }
+        // bthread_setconcurrency(_options.num_threads);
     }
 
     for (MethodMap::iterator it = _method_map.begin();
@@ -1067,15 +744,6 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
             it->second.status->SetConcurrencyLimiter(cl);
         }
     }
-    if (0 != SetServiceMaxConcurrency(_options.nshead_service)) {
-        return -1;
-    }
-#ifdef ENABLE_THRIFT_FRAMED_PROTOCOL
-    if (0 != SetServiceMaxConcurrency(_options.thrift_service)) {
-        return -1;
-    }
-#endif
-
 
     // Create listening ports
     if (port_range.min_port > port_range.max_port) {
@@ -1083,21 +751,16 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
                    << port_range.max_port << ']';
         return -1;
     }
-    if (butil::is_endpoint_extended(endpoint) &&
-            (port_range.min_port != endpoint.port || port_range.max_port != endpoint.port)) {
-        LOG(ERROR) << "Only IPv4 address supports port range feature";
-        return -1;
-    }
-    _listen_addr = endpoint;
+    _listen_addr.ip = ip;
     for (int port = port_range.min_port; port <= port_range.max_port; ++port) {
         _listen_addr.port = port;
-        butil::fd_guard sockfd(tcp_listen(_listen_addr));
+        sgxbutil::fd_guard sockfd(tcp_listen(_listen_addr));
         if (sockfd < 0) {
             if (port != port_range.max_port) { // not the last port, try next
                 continue;
             }
             if (port_range.min_port != port_range.max_port) {
-                LOG(ERROR) << "Fail to listen " << _listen_addr.ip
+                LOG(ERROR) << "Fail to listen " << ip
                            << ":[" << port_range.min_port << '-'
                            << port_range.max_port << ']';
             } else {
@@ -1120,20 +783,17 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
                 LOG(ERROR) << "Fail to build acceptor";
                 return -1;
             }
-            _am->_use_rdma = _options.use_rdma;
-            _am->_bthread_tag = _options.bthread_tag;
         }
         // Set `_status' to RUNNING before accepting connections
         // to prevent requests being rejected as ELOGOFF
         _status = RUNNING;
         time(&_last_start_time);
         GenerateVersionIfNeeded();
-        g_running_server_count.fetch_add(1, butil::memory_order_relaxed);
+        g_running_server_count.fetch_add(1, sgxbutil::memory_order_relaxed);
 
         // Pass ownership of `sockfd' to `_am'
         if (_am->StartAccept(sockfd, _options.idle_timeout_sec,
-                             _default_ssl_ctx,
-                             _options.force_ssl) != 0) {
+                             _default_ssl_ctx) != 0) {
             LOG(ERROR) << "Fail to start acceptor";
             return -1;
         }
@@ -1152,14 +812,9 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
                 " against the purpose of \"being internal\".";
             return -1;
         }
-        if (butil::is_endpoint_extended(endpoint)) {
-            LOG(ERROR) << "internal_port is available in IPv4 address only";
-            return -1;
-        }
-
-        butil::EndPoint internal_point = _listen_addr;
+        sgxbutil::EndPoint internal_point = _listen_addr;
         internal_point.port = _options.internal_port;
-        butil::fd_guard sockfd(tcp_listen(internal_point));
+        sgxbutil::fd_guard sockfd(tcp_listen(internal_point));
         if (sockfd < 0) {
             LOG(ERROR) << "Fail to listen " << internal_point << " (internal)";
             return -1;
@@ -1173,64 +828,50 @@ int Server::StartInternal(const butil::EndPoint& endpoint,
         }
         // Pass ownership of `sockfd' to `_internal_am'
         if (_internal_am->StartAccept(sockfd, _options.idle_timeout_sec,
-                                      _default_ssl_ctx,
-                                      false) != 0) {
+                                      _default_ssl_ctx) != 0) {
             LOG(ERROR) << "Fail to start internal_acceptor";
             return -1;
         }
         sockfd.release();
     }
 
-    PutPidFileIfNeeded();
-
     // Launch _derivative_thread.
     CHECK_EQ(INVALID_BTHREAD, _derivative_thread);
-    bthread_attr_t tmp = BTHREAD_ATTR_NORMAL;
-    tmp.tag = _options.bthread_tag;
-    if (bthread_start_background(&_derivative_thread, &tmp,
+    if (bthread_start_background(&_derivative_thread, NULL,
                                  UpdateDerivedVars, this) != 0) {
         LOG(ERROR) << "Fail to create _derivative_thread";
         return -1;
     }
 
     // Print tips to server launcher.
-    if (butil::is_endpoint_extended(_listen_addr)) {
-        const char* builtin_msg = _options.has_builtin_services ? " with builtin service" : "";
-        LOG(INFO) << "Server[" << version() << "] is serving on " << _listen_addr
-                  << builtin_msg << '.';
-        //TODO add TrackMe support
-    } else {
-        int http_port = _listen_addr.port;
-        std::ostringstream server_info;
-        server_info << "Server[" << version() << "] is serving on port="
-                    << _listen_addr.port;
-        if (_options.internal_port >= 0 && _options.has_builtin_services) {
-            http_port = _options.internal_port;
-            server_info << " and internal_port=" << _options.internal_port;
-        }
-        LOG(INFO) << server_info.str() << '.';
+    int http_port = _listen_addr.port;
+    std::ostringstream server_info;
+    server_info << "Server[" << version() << "] is serving on port="
+                << _listen_addr.port;
+    if (_options.internal_port >= 0 && _options.has_builtin_services) {
+        http_port = _options.internal_port;
+        server_info << " and internal_port=" << _options.internal_port;
+    }
+    LOG(INFO) << server_info.str() << '.';
 
-        if (_options.has_builtin_services) {
-            LOG(INFO) << "Check out http://" << butil::my_hostname() << ':'
-                    << http_port << " in web browser.";
-        } else {
-            LOG(WARNING) << "Builtin services are disabled according to "
-                "ServerOptions.has_builtin_services";
-        }
-        // For trackme reporting
-        SetTrackMeAddress(butil::EndPoint(butil::my_ip(), http_port));
+    if (_options.has_builtin_services) {
+        LOG(INFO) << "Check out http://" << sgxbutil::my_hostname() << ':'
+                  << http_port << " in web browser.";
+    } else {
+        LOG(WARNING) << "Builtin services are disabled according to "
+            "ServerOptions.has_builtin_services";
     }
     revert_server.release();
     return 0;
 }
 
-int Server::Start(const butil::EndPoint& endpoint, const ServerOptions* opt) {
+int Server::Start(const sgxbutil::EndPoint& endpoint, const ServerOptions* opt) {
     return StartInternal(
-        endpoint, PortRange(endpoint.port, endpoint.port), opt);
+        endpoint.ip, PortRange(endpoint.port, endpoint.port), opt);
 }
 
 int Server::Start(const char* ip_port_str, const ServerOptions* opt) {
-    butil::EndPoint point;
+    sgxbutil::EndPoint point;
     if (str2endpoint(ip_port_str, &point) != 0 &&
         hostname2endpoint(ip_port_str, &point) != 0) {
         LOG(ERROR) << "Invalid address=`" << ip_port_str << '\'';
@@ -1244,22 +885,18 @@ int Server::Start(int port, const ServerOptions* opt) {
         LOG(ERROR) << "Invalid port=" << port;
         return -1;
     }
-    return Start(butil::EndPoint(butil::IP_ANY, port), opt);
+    return Start(sgxbutil::EndPoint(sgxbutil::IP_ANY, port), opt);
 }
 
 int Server::Start(const char* ip_str, PortRange port_range,
                   const ServerOptions *opt) {
-    butil::ip_t ip;
-    if (butil::str2ip(ip_str, &ip) != 0 &&
-        butil::hostname2ip(ip_str, &ip) != 0) {
+    sgxbutil::ip_t ip;
+    if (sgxbutil::str2ip(ip_str, &ip) != 0 &&
+        sgxbutil::hostname2ip(ip_str, &ip) != 0) {
         LOG(ERROR) << "Invalid address=`" << ip_str << '\'';
         return -1;
     }
-    return StartInternal(butil::EndPoint(ip, 0), port_range, opt);
-}
-
-int Server::Start(PortRange port_range, const ServerOptions* opt) {
-    return StartInternal(butil::EndPoint(butil::IP_ANY, 0), port_range, opt);
+    return StartInternal(ip, port_range, opt);
 }
 
 int Server::Stop(int timeout_ms) {
@@ -1292,31 +929,6 @@ int Server::Join() {
         _internal_am->Join();
     }
 
-    if (_session_local_data_pool) {
-        // We can't delete the pool right here because there's a bvar watching
-        // this pool in _derivative_thread which does not quit yet.
-        _session_local_data_pool->Reset(NULL);
-    }
-
-    if (_keytable_pool) {
-        // Destroy _keytable_pool to delete keytables inside. This has to be
-        // done here (before leaving Join) because it's legal for users to
-        // delete bthread keys after Join which makes related objects
-        // in KeyTables undeletable anymore and leaked.
-        CHECK_EQ(0, bthread_keytable_pool_destroy(_keytable_pool));
-        // TODO: Can't delete _keytable_pool which may be accessed by
-        // still-running bthreads (created by the server). The memory is
-        // leaked but servers are unlikely to be started/stopped frequently,
-        // the leak is acceptable in most scenarios.
-        _keytable_pool = NULL;
-    }
-
-    // Delete tls_key as well since we don't need it anymore.
-    if (_tl_options.tls_key != INVALID_BTHREAD_KEY) {
-        CHECK_EQ(0, bthread_key_delete(_tl_options.tls_key));
-        _tl_options.tls_key = INVALID_BTHREAD_KEY;
-    }
-
     // Have to join _derivative_thread, which may assume that server is running
     // and services in server are not mutated, otherwise data race happens
     // between Add/RemoveService after Join() and the thread.
@@ -1326,7 +938,7 @@ int Server::Join() {
         _derivative_thread = INVALID_BTHREAD;
     }
 
-    g_running_server_count.fetch_sub(1, butil::memory_order_relaxed);
+    g_running_server_count.fetch_sub(1, sgxbutil::memory_order_relaxed);
     _status = READY;
     return 0;
 }
@@ -1368,8 +980,9 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
         return -1;
     }
 
+    //- Don't use this option in sgx-braft
     // defined `option (idl_support) = true' or not.
-    const bool is_idl_support = sd->file()->options().GetExtension(idl_support);
+    // const bool is_idl_support = sd->file()->options().GetExtension(idl_support);
 
     Tabbed* tabbed = dynamic_cast<Tabbed*>(service);
     for (int i = 0; i < sd->method_count(); ++i) {
@@ -1378,36 +991,30 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
         mp.is_builtin_service = is_builtin_service;
         mp.own_method_status = true;
         mp.params.is_tabbed = !!tabbed;
-        mp.params.allow_default_url = svc_opt.allow_default_url;
         mp.params.allow_http_body_to_pb = svc_opt.allow_http_body_to_pb;
         mp.params.pb_bytes_to_base64 = svc_opt.pb_bytes_to_base64;
-        mp.params.pb_single_repeated_to_array = svc_opt.pb_single_repeated_to_array;
-        mp.params.enable_progressive_read = svc_opt.enable_progressive_read;
-        if (mp.params.enable_progressive_read) {
-            _has_progressive_read_method = true;
-        }
         mp.service = service;
         mp.method = md;
         mp.status = new MethodStatus;
         _method_map[md->full_name()] = mp;
-        if (is_idl_support && sd->name() != sd->full_name()/*has ns*/) {
-            MethodProperty mp2 = mp;
-            mp2.own_method_status = false;
-            // have to map service_name + method_name as well because ubrpc
-            // does not send the namespace before service_name.
-            std::string full_name_wo_ns;
-            full_name_wo_ns.reserve(sd->name().size() + 1 + md->name().size());
-            full_name_wo_ns.append(sd->name());
-            full_name_wo_ns.push_back('.');
-            full_name_wo_ns.append(md->name());
-            if (_method_map.seek(full_name_wo_ns) == NULL) {
-                _method_map[full_name_wo_ns] = mp2;
-            } else {
-                LOG(ERROR) << '`' << full_name_wo_ns << "' already exists";
-                RemoveMethodsOf(service);
-                return -1;
-            }
-        }
+        // if (is_idl_support && sd->name() != sd->full_name()/*has ns*/) {
+        //     MethodProperty mp2 = mp;
+        //     mp2.own_method_status = false;
+        //     // have to map service_name + method_name as well because ubrpc
+        //     // does not send the namespace before service_name.
+        //     std::string full_name_wo_ns;
+        //     full_name_wo_ns.reserve(sd->name().size() + 1 + md->name().size());
+        //     full_name_wo_ns.append(sd->name());
+        //     full_name_wo_ns.push_back('.');
+        //     full_name_wo_ns.append(md->name());
+        //     if (_method_map.seek(full_name_wo_ns) == NULL) {
+        //         _method_map[full_name_wo_ns] = mp2;
+        //     } else {
+        //         LOG(ERROR) << '`' << full_name_wo_ns << "' already exists";
+        //         RemoveMethodsOf(service);
+        //         return -1;
+        //     }
+        // }
     }
 
     const ServiceProperty ss = {
@@ -1422,7 +1029,7 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
         }
     }
 
-    butil::StringPiece restful_mappings = svc_opt.restful_mappings;
+    sgxbutil::StringPiece restful_mappings = svc_opt.restful_mappings;
     restful_mappings.trim_spaces();
     if (!restful_mappings.empty()) {
         // Parse the mappings.
@@ -1470,10 +1077,8 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
                 }
                 MethodProperty::OpaqueParams params;
                 params.is_tabbed = !!tabbed;
-                params.allow_default_url = svc_opt.allow_default_url;
                 params.allow_http_body_to_pb = svc_opt.allow_http_body_to_pb;
                 params.pb_bytes_to_base64 = svc_opt.pb_bytes_to_base64;
-                params.pb_single_repeated_to_array = svc_opt.pb_single_repeated_to_array;
                 if (!_global_restful_map->AddMethod(
                         mappings[i].path, service, params,
                         mappings[i].method_name, mp->status)) {
@@ -1509,10 +1114,8 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
             }
             MethodProperty::OpaqueParams params;
             params.is_tabbed = !!tabbed;
-            params.allow_default_url = svc_opt.allow_default_url;
             params.allow_http_body_to_pb = svc_opt.allow_http_body_to_pb;
             params.pb_bytes_to_base64 = svc_opt.pb_bytes_to_base64;
-            params.pb_single_repeated_to_array = svc_opt.pb_single_repeated_to_array;
             if (!m->AddMethod(mappings[i].path, service, params,
                               mappings[i].method_name, mp->status)) {
                 LOG(ERROR) << "Fail to map `" << mappings[i].path << "' to `"
@@ -1542,6 +1145,7 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
         }
     }
 
+    //- Used to show tab info in the web (e.g., status, vars and so on)
     if (tabbed) {
         if (_tab_info_list == NULL) {
             _tab_info_list = new TabInfoList;
@@ -1565,15 +1169,12 @@ int Server::AddServiceInternal(google::protobuf::Service* service,
 
 ServiceOptions::ServiceOptions()
     : ownership(SERVER_DOESNT_OWN_SERVICE)
-    , allow_default_url(false)
     , allow_http_body_to_pb(true)
 #ifdef BAIDU_INTERNAL
     , pb_bytes_to_base64(false)
 #else
     , pb_bytes_to_base64(true)
 #endif
-    , pb_single_repeated_to_array(false)
-    , enable_progressive_read(false)
     {}
 
 int Server::AddService(google::protobuf::Service* service,
@@ -1585,13 +1186,11 @@ int Server::AddService(google::protobuf::Service* service,
 
 int Server::AddService(google::protobuf::Service* service,
                        ServiceOwnership ownership,
-                       const butil::StringPiece& restful_mappings,
-                       bool allow_default_url) {
+                       const sgxbutil::StringPiece& restful_mappings) {
     ServiceOptions options;
     options.ownership = ownership;
     // TODO: This is weird
     options.restful_mappings = restful_mappings.as_string();
-    options.allow_default_url = allow_default_url;
     return AddServiceInternal(service, false, options);
 }
 
@@ -1608,35 +1207,35 @@ int Server::AddBuiltinService(google::protobuf::Service* service) {
 
 void Server::RemoveMethodsOf(google::protobuf::Service* service) {
     const google::protobuf::ServiceDescriptor* sd = service->GetDescriptor();
-    const bool is_idl_support = sd->file()->options().GetExtension(idl_support);
+    // const bool is_idl_support = sd->file()->options().GetExtension(idl_support);
     std::string full_name_wo_ns;
     for (int i = 0; i < sd->method_count(); ++i) {
         const google::protobuf::MethodDescriptor* md = sd->method(i);
         MethodProperty* mp = _method_map.seek(md->full_name());
-        if (is_idl_support) {
-            full_name_wo_ns.clear();
-            full_name_wo_ns.reserve(sd->name().size() + 1 + md->name().size());
-            full_name_wo_ns.append(sd->name());
-            full_name_wo_ns.push_back('.');
-            full_name_wo_ns.append(md->name());
-            _method_map.erase(full_name_wo_ns);
-        }
+        // if (is_idl_support) {
+        //     full_name_wo_ns.clear();
+        //     full_name_wo_ns.reserve(sd->name().size() + 1 + md->name().size());
+        //     full_name_wo_ns.append(sd->name());
+        //     full_name_wo_ns.push_back('.');
+        //     full_name_wo_ns.append(md->name());
+        //     _method_map.erase(full_name_wo_ns);
+        // }
         if (mp == NULL) {
             LOG(ERROR) << "Fail to find method=" << md->full_name();
             continue;
         }
         if (mp->http_url) {
-            butil::StringSplitter at_sp(mp->http_url->c_str(), '@');
+            sgxbutil::StringSplitter at_sp(mp->http_url->c_str(), '@');
             for (; at_sp; ++at_sp) {
-                butil::StringPiece path(at_sp.field(), at_sp.length());
+                sgxbutil::StringPiece path(at_sp.field(), at_sp.length());
                 path.trim_spaces();
-                butil::StringSplitter slash_sp(
+                sgxbutil::StringSplitter slash_sp(
                     path.data(), path.data() + path.size(), '/');
                 if (slash_sp == NULL) {
                     LOG(ERROR) << "Invalid http_url=" << *mp->http_url;
                     break;
                 }
-                butil::StringPiece v_svc_name(slash_sp.field(), slash_sp.length());
+                sgxbutil::StringPiece v_svc_name(slash_sp.field(), slash_sp.length());
                 const ServiceProperty* vsp = FindServicePropertyByName(v_svc_name);
                 if (vsp == NULL) {
                     if (_global_restful_map) {
@@ -1734,13 +1333,13 @@ void Server::ClearServices() {
 }
 
 google::protobuf::Service* Server::FindServiceByFullName(
-    const butil::StringPiece& full_name) const {
+    const sgxbutil::StringPiece& full_name) const {
     ServiceProperty* ss = _fullname_service_map.seek(full_name);
     return (ss ? ss->service : NULL);
 }
 
 google::protobuf::Service* Server::FindServiceByName(
-    const butil::StringPiece& name) const {
+    const sgxbutil::StringPiece& name) const {
     ServiceProperty* ss = _service_map.seek(name);
     return (ss ? ss->service : NULL);
 }
@@ -1775,81 +1374,21 @@ void Server::GenerateVersionIfNeeded() {
     if (!_version.empty()) {
         return;
     }
-    int extra_count = !!_options.nshead_service + !!_options.rtmp_service +
-        !!_options.thrift_service + !!_options.redis_service;
-    _version.reserve((extra_count + service_count()) * 20);
+    _version.reserve((service_count()) * 20);
     for (ServiceMap::const_iterator it = _fullname_service_map.begin();
          it != _fullname_service_map.end(); ++it) {
         if (it->second.is_user_service()) {
             if (!_version.empty()) {
                 _version.push_back('+');
             }
-            _version.append(butil::class_name_str(*it->second.service));
+            // _version.append(butil::class_name_str(*it->second.service));
+            _version.append(std::string());
         }
     }
-    if (_options.nshead_service) {
-        if (!_version.empty()) {
-            _version.push_back('+');
-        }
-        _version.append(butil::class_name_str(*_options.nshead_service));
-    }
-
-#ifdef ENABLE_THRIFT_FRAMED_PROTOCOL
-    if (_options.thrift_service) {
-        if (!_version.empty()) {
-            _version.push_back('+');
-        }
-        _version.append(butil::class_name_str(*_options.thrift_service));
-    }
-#endif
-
-    if (_options.rtmp_service) {
-        if (!_version.empty()) {
-            _version.push_back('+');
-        }
-        _version.append(butil::class_name_str(*_options.rtmp_service));
-    }
-
-    if (_options.redis_service) {
-        if (!_version.empty()) {
-            _version.push_back('+');
-        }
-        _version.append(butil::class_name_str(*_options.redis_service));
-    }
+    //- _version is NULL string by default, so we can safely eliminate the use of butil::class_name_str
+    LOG(INFO) << "Func: " << __FUNCTION__ << " _version = " << _version;
 }
 
-void Server::PutPidFileIfNeeded() {
-    if (_options.pid_file.empty()) {
-        return;
-    }
-    RPC_VLOG << "pid_file = " << _options.pid_file;
-    // Recursively create directory
-    for (size_t pos = _options.pid_file.find('/'); pos != std::string::npos;
-            pos = _options.pid_file.find('/', pos + 1)) {
-        std::string dir_name =_options.pid_file.substr(0, pos + 1);
-        int rc = mkdir(dir_name.c_str(),
-                       S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP);
-        if (rc != 0 && errno != EEXIST
-#if defined(OS_MACOSX)
-        && errno != EISDIR
-#endif
-        ) {
-            PLOG(WARNING) << "Fail to create " << dir_name;
-            _options.pid_file.clear();
-            return;
-        }
-    }
-    int fd = open(_options.pid_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (fd < 0) {
-        LOG(WARNING) << "Fail to open " << _options.pid_file;
-        _options.pid_file.clear();
-        return;
-    }
-    char buf[32];
-    int nw = snprintf(buf, sizeof(buf), "%lld", (long long)getpid());
-    CHECK_EQ(nw, write(fd, buf, nw));
-    CHECK_EQ(0, close(fd));
-}
 
 void Server::RunUntilAskedToQuit() {
     while (!IsAskedToQuit()) {
@@ -1859,25 +1398,6 @@ void Server::RunUntilAskedToQuit() {
     Join();
 }
 
-void* thread_local_data() {
-    const Server::ThreadLocalOptions* tl_options =
-        static_cast<const Server::ThreadLocalOptions*>(bthread_get_assigned_data());
-    if (tl_options == NULL) { // not in server threads.
-        return NULL;
-    }
-    if (BAIDU_UNLIKELY(tl_options->thread_local_data_factory == NULL)) {
-        CHECK(false) << "The protocol impl. may not set tls correctly";
-        return NULL;
-    }
-    void* data = bthread_getspecific(tl_options->tls_key);
-    if (data == NULL) {
-        data = tl_options->thread_local_data_factory->CreateData();
-        if (data != NULL) {
-            CHECK_EQ(0, bthread_setspecific(tl_options->tls_key, data));
-        }
-    }
-    return data;
-}
 
 inline void tabs_li(std::ostream& os, const char* link,
                     const char* tab_name, const char* current_tab_name) {
@@ -1898,7 +1418,7 @@ void Server::PrintTabsBody(std::ostream& os,
                     current_tab_name);
         }
     }
-    os << "<li id='https://github.com/apache/brpc/blob/master/docs/cn/builtin_service.md' "
+    os << "<li id='https://github.com/brpc/brpc/blob/master/docs/cn/builtin_service.md' "
         "class='help'>?</li>\n</ul>\n"
         "<div style='height:40px;'></div>";  // placeholder
 }
@@ -1915,11 +1435,11 @@ int StartDummyServerAt(int port, ProfilerLinker) {
         BAIDU_SCOPED_LOCK(g_dummy_server_mutex);
         if (g_dummy_server == NULL) {
             Server* dummy_server = new Server;
-            dummy_server->set_version(butil::string_printf(
-                        "DummyServerOf(%s)", GetProgramName()));
+            //- TODO: remove builtin/common.h, so we can't use its func
+            // dummy_server->set_version(sgxbutil::string_printf(
+            //             "DummyServerOf(%s)", GetProgramName()));
             ServerOptions options;
             options.num_threads = 0;
-            options.bthread_tag = bthread_self_tag();
             if (dummy_server->Start(port, &options) != 0) {
                 LOG(ERROR) << "Fail to start dummy_server at port=" << port;
                 return -1;
@@ -1941,13 +1461,13 @@ bool IsDummyServerRunning() {
 }
 
 const Server::MethodProperty*
-Server::FindMethodPropertyByFullName(const butil::StringPiece&fullname) const  {
+Server::FindMethodPropertyByFullName(const sgxbutil::StringPiece&fullname) const  {
     return _method_map.seek(fullname);
 }
 
 const Server::MethodProperty*
-Server::FindMethodPropertyByFullName(const butil::StringPiece& service_name/*full*/,
-                                     const butil::StringPiece& method_name) const {
+Server::FindMethodPropertyByFullName(const sgxbutil::StringPiece& service_name/*full*/,
+                                     const sgxbutil::StringPiece& method_name) const {
     const size_t fullname_len = service_name.size() + 1 + method_name.size();
     if (fullname_len <= 256) {
         // Avoid allocation in most cases.
@@ -1955,7 +1475,7 @@ Server::FindMethodPropertyByFullName(const butil::StringPiece& service_name/*ful
         memcpy(buf, service_name.data(), service_name.size());
         buf[service_name.size()] = '.';
         memcpy(buf + service_name.size() + 1, method_name.data(), method_name.size());
-        return FindMethodPropertyByFullName(butil::StringPiece(buf, fullname_len));
+        return FindMethodPropertyByFullName(sgxbutil::StringPiece(buf, fullname_len));
     } else {
         std::string full_method_name;
         full_method_name.reserve(fullname_len);
@@ -1967,7 +1487,7 @@ Server::FindMethodPropertyByFullName(const butil::StringPiece& service_name/*ful
 }
 
 const Server::MethodProperty*
-Server::FindMethodPropertyByNameAndIndex(const butil::StringPiece& service_name,
+Server::FindMethodPropertyByNameAndIndex(const sgxbutil::StringPiece& service_name,
                                          int method_index) const {
     const Server::ServiceProperty* sp = FindServicePropertyByName(service_name);
     if (NULL == sp) {
@@ -1982,22 +1502,22 @@ Server::FindMethodPropertyByNameAndIndex(const butil::StringPiece& service_name,
 }
 
 const Server::ServiceProperty*
-Server::FindServicePropertyByFullName(const butil::StringPiece& fullname) const {
+Server::FindServicePropertyByFullName(const sgxbutil::StringPiece& fullname) const {
     return _fullname_service_map.seek(fullname);
 }
 
 const Server::ServiceProperty*
-Server::FindServicePropertyByName(const butil::StringPiece& name) const {
+Server::FindServicePropertyByName(const sgxbutil::StringPiece& name) const {
     return _service_map.seek(name);
 }
 
+#ifdef SGX_USE_REMOTE_ATTESTATION
 int Server::AddCertificate(const CertInfo& cert) {
     if (!_options.has_ssl_options()) {
         LOG(ERROR) << "ServerOptions.ssl_options is not configured yet";
         return -1;
     }
-    std::string cert_key(cert.certificate);
-    cert_key.append(cert.private_key);
+    std::string cert_key("Enclave_Cert");
     if (_ssl_ctx_map.seek(cert_key) != NULL) {
         LOG(WARNING) << cert << " already exists";
         return 0;
@@ -2006,9 +1526,7 @@ int Server::AddCertificate(const CertInfo& cert) {
     SSLContext ssl_ctx;
     ssl_ctx.filters = cert.sni_filters;
     ssl_ctx.ctx = std::make_shared<SocketSSLContext>();
-    SSL_CTX* raw_ctx = CreateServerSSLContext(
-            cert.certificate, cert.private_key,
-            _options.ssl_options(), &_raw_alpns, &ssl_ctx.filters);
+    SSL_CTX* raw_ctx = CreateServerSSLContext(_options.ssl_options(), &ssl_ctx.filters);
     if (raw_ctx == NULL) {
         return -1;
     }
@@ -2026,6 +1544,42 @@ int Server::AddCertificate(const CertInfo& cert) {
     _ssl_ctx_map[cert_key] = ssl_ctx;
     return 0;
 }
+#else
+int Server::AddCertificate(const CertInfo& cert) {
+    if (!_options.has_ssl_options()) {
+        LOG(ERROR) << "ServerOptions.ssl_options is not configured yet";
+        return -1;
+    }
+    std::string cert_key(cert.certificate);
+    cert_key.append(cert.private_key);
+    if (_ssl_ctx_map.seek(cert_key) != NULL) {
+        LOG(WARNING) << cert << " already exists";
+        return 0;
+    }
+
+    SSLContext ssl_ctx;
+    ssl_ctx.filters = cert.sni_filters;
+    ssl_ctx.ctx = std::make_shared<SocketSSLContext>();
+    SSL_CTX* raw_ctx = CreateServerSSLContext(cert.certificate, cert.private_key,
+                                              _options.ssl_options(), &ssl_ctx.filters);
+    if (raw_ctx == NULL) {
+        return -1;
+    }
+    ssl_ctx.ctx->raw_ctx = raw_ctx;
+
+#ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
+    SSL_CTX_set_tlsext_servername_callback(ssl_ctx.ctx->raw_ctx, SSLSwitchCTXByHostname);
+    SSL_CTX_set_tlsext_servername_arg(ssl_ctx.ctx->raw_ctx, this);
+#endif
+
+    if (!_reload_cert_maps.Modify(AddCertMapping, ssl_ctx)) {
+        LOG(ERROR) << "Fail to add mappings into _reload_cert_maps";
+        return -1;
+    }
+    _ssl_ctx_map[cert_key] = ssl_ctx;
+    return 0;
+}
+#endif
 
 bool Server::AddCertMapping(CertMaps& bg, const SSLContext& ssl_ctx) {
     if (!bg.cert_map.initialized()
@@ -2084,6 +1638,9 @@ int Server::RemoveCertificate(const CertInfo& cert) {
     return 0;
 }
 
+#ifdef SGX_USE_REMOTE_ATTESTATION
+//- Remote attestation versions of remove/reset certs are not implemented.
+#else
 bool Server::RemoveCertMapping(CertMaps& bg, const SSLContext& ssl_ctx) {
     for (size_t i = 0; i < ssl_ctx.filters.size(); ++i) {
         const char* hostname = ssl_ctx.filters[i].c_str();
@@ -2114,7 +1671,7 @@ int Server::ResetCertificates(const std::vector<CertInfo>& certs) {
         return -1;
     }
 
-    // Add default certificate into tmp_map first since it can't be reloaded
+    // Add default certficiate into tmp_map first since it can't be reloaded
     std::string default_cert_key =
         _options.ssl_options().default_cert.certificate
         + _options.ssl_options().default_cert.private_key;
@@ -2133,7 +1690,7 @@ int Server::ResetCertificates(const std::vector<CertInfo>& certs) {
         ssl_ctx.ctx = std::make_shared<SocketSSLContext>();
         ssl_ctx.ctx->raw_ctx = CreateServerSSLContext(
             certs[i].certificate, certs[i].private_key,
-            _options.ssl_options(), &_raw_alpns, &ssl_ctx.filters);
+            _options.ssl_options(), &ssl_ctx.filters);
         if (ssl_ctx.ctx->raw_ctx == NULL) {
             return -1;
         }
@@ -2152,6 +1709,7 @@ int Server::ResetCertificates(const std::vector<CertInfo>& certs) {
     _ssl_ctx_map.swap(tmp_map);
     return 0;
 }
+#endif
 
 bool Server::ResetCertMappings(CertMaps& bg, const SSLContextMap& ctx_map) {
     if (!bg.cert_map.initialized()
@@ -2203,7 +1761,7 @@ bool Server::ClearCertMapping(CertMaps& bg) {
 
 int Server::ResetMaxConcurrency(int max_concurrency) {
     if (!IsRunning()) {
-        LOG(WARNING) << "ResetMaxConcurrency is only allowed for a Running Server";
+        LOG(WARNING) << "ResetMaxConcurrency is only allowd for a Running Server";
         return -1;
     }
     // Assume that modifying int32 is atomical in X86
@@ -2213,7 +1771,7 @@ int Server::ResetMaxConcurrency(int max_concurrency) {
 
 AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(MethodProperty* mp) {
     if (IsRunning()) {
-        LOG(WARNING) << "MaxConcurrencyOf is only allowed before Server started";
+        LOG(WARNING) << "MaxConcurrencyOf is only allowd before Server started";
         return g_default_max_concurrency_of_method;
     }
     if (mp->status == NULL) {
@@ -2227,7 +1785,7 @@ AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(MethodProperty* mp) {
 
 int Server::MaxConcurrencyOf(const MethodProperty* mp) const {
     if (IsRunning()) {
-        LOG(WARNING) << "MaxConcurrencyOf is only allowed before Server started";
+        LOG(WARNING) << "MaxConcurrencyOf is only allowd before Server started";
         return g_default_max_concurrency_of_method;
     }
     if (mp == NULL || mp->status == NULL) {
@@ -2236,48 +1794,22 @@ int Server::MaxConcurrencyOf(const MethodProperty* mp) const {
     return mp->max_concurrency;
 }
 
-AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(const butil::StringPiece& full_method_name) {
-    do {
-        if (full_method_name == butil::class_name_str<NsheadService>()) {
-            if (NULL == options().nshead_service) {
-                break;
-            }
-            return options().nshead_service->_max_concurrency;
-        }
-#ifdef ENABLE_THRIFT_FRAMED_PROTOCOL
-        if (full_method_name == butil::class_name_str<ThriftService>()) {
-            if (NULL == options().thrift_service) {
-                break;
-            }
-            return options().thrift_service->_max_concurrency;
-        }
-#endif
-        if (full_method_name == butil::class_name_str<BaiduMasterService>()) {
-            if (NULL == options().baidu_master_service) {
-                break;
-            }
-            return options().baidu_master_service->_max_concurrency;
-        }
-
-        MethodProperty* mp = _method_map.seek(full_method_name);
-        if (mp == NULL) {
-            break;
-        }
-        return MaxConcurrencyOf(mp);
-
-    } while (false);
-
-    LOG(ERROR) << "Fail to find method=" << full_method_name;
-    _failed_to_set_max_concurrency_of_method = true;
-    return g_default_max_concurrency_of_method;
+AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(const sgxbutil::StringPiece& full_method_name) {
+    MethodProperty* mp = _method_map.seek(full_method_name);
+    if (mp == NULL) {
+        LOG(ERROR) << "Fail to find method=" << full_method_name;
+        _failed_to_set_max_concurrency_of_method = true;
+        return g_default_max_concurrency_of_method;
+    }
+    return MaxConcurrencyOf(mp);
 }
 
-int Server::MaxConcurrencyOf(const butil::StringPiece& full_method_name) const {
+int Server::MaxConcurrencyOf(const sgxbutil::StringPiece& full_method_name) const {
     return MaxConcurrencyOf(_method_map.seek(full_method_name));
 }
 
-AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(const butil::StringPiece& full_service_name,
-                              const butil::StringPiece& method_name) {
+AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(const sgxbutil::StringPiece& full_service_name,
+                              const sgxbutil::StringPiece& method_name) {
     MethodProperty* mp = const_cast<MethodProperty*>(
         FindMethodPropertyByFullName(full_service_name, method_name));
     if (mp == NULL) {
@@ -2289,53 +1821,33 @@ AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(const butil::StringPiece& full_
     return MaxConcurrencyOf(mp);
 }
 
-int Server::MaxConcurrencyOf(const butil::StringPiece& full_service_name,
-                             const butil::StringPiece& method_name) const {
+int Server::MaxConcurrencyOf(const sgxbutil::StringPiece& full_service_name,
+                             const sgxbutil::StringPiece& method_name) const {
     return MaxConcurrencyOf(FindMethodPropertyByFullName(
                                 full_service_name, method_name));
 }
 
 AdaptiveMaxConcurrency& Server::MaxConcurrencyOf(google::protobuf::Service* service,
-                              const butil::StringPiece& method_name) {
+                              const sgxbutil::StringPiece& method_name) {
     return MaxConcurrencyOf(service->GetDescriptor()->full_name(), method_name);
 }
 
 int Server::MaxConcurrencyOf(google::protobuf::Service* service,
-                             const butil::StringPiece& method_name) const {
+                             const sgxbutil::StringPiece& method_name) const {
     return MaxConcurrencyOf(service->GetDescriptor()->full_name(), method_name);
-}
-
-bool Server::AcceptRequest(Controller* cntl) const {
-    const Interceptor* interceptor = _options.interceptor;
-    if (!interceptor) {
-        return true;
-    }
-
-    int error_code = 0;
-    std::string error_text;
-    if (cntl &&
-        !interceptor->Accept(cntl, error_code, error_text)) {
-        cntl->SetFailed(error_code,
-                        "Reject by Interceptor: %s",
-                        error_text.c_str());
-        return false;
-    }
-
-    return true;
 }
 
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
 int Server::SSLSwitchCTXByHostname(struct ssl_st* ssl,
-                                   int* al, void* se) {
+                                   int* al, Server* server) {
     (void)al;
-    Server* server = reinterpret_cast<Server*>(se);
     const char* hostname = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     bool strict_sni = server->_options.ssl_options().strict_sni;
     if (hostname == NULL) {
         return strict_sni ? SSL_TLSEXT_ERR_ALERT_FATAL : SSL_TLSEXT_ERR_NOACK;
     }
 
-    butil::DoublyBufferedData<CertMaps>::ScopedPtr s;
+    sgxbutil::DoublyBufferedData<CertMaps>::ScopedPtr s;
     if (server->_reload_cert_maps.Read(&s) != 0) {
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }

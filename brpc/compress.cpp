@@ -16,7 +16,7 @@
 // under the License.
 
 
-#include "butil/logging.h"
+#include "sgxbutil/logging.h"
 #include "brpc/compress.h"
 #include "brpc/protocol.h"
 
@@ -76,7 +76,7 @@ void ListCompressHandler(std::vector<CompressHandler>* vec) {
     }
 }
 
-bool ParseFromCompressedData(const butil::IOBuf& data, 
+bool ParseFromCompressedData(const sgxbutil::IOBuf& data, 
                              google::protobuf::Message* msg,
                              CompressType compress_type) {
     if (compress_type == COMPRESS_TYPE_NONE) {
@@ -90,9 +90,9 @@ bool ParseFromCompressedData(const butil::IOBuf& data,
 }
 
 bool SerializeAsCompressedData(const google::protobuf::Message& msg,
-                               butil::IOBuf* buf, CompressType compress_type) {
+                               sgxbutil::IOBuf* buf, CompressType compress_type) {
     if (compress_type == COMPRESS_TYPE_NONE) {
-        butil::IOBufAsZeroCopyOutputStream wrapper(buf);
+        sgxbutil::IOBufAsZeroCopyOutputStream wrapper(buf);
         return msg.SerializeToZeroCopyStream(&wrapper);
     }
     const CompressHandler* handler = FindCompressHandler(compress_type);

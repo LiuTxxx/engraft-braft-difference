@@ -16,13 +16,10 @@
 // under the License.
 
 
-#include <ctype.h>                         // isalnum
-
-#include <unordered_set>
-
 #include "brpc/log.h"
 #include "brpc/details/http_parser.h"      // http_parser_parse_url
 #include "brpc/uri.h"                      // URI
+#include "sgxbutil/logging.h"
 
 
 namespace brpc {
@@ -102,21 +99,6 @@ inline const char* SplitHostAndPort(const char* host_begin,
     return host_end;
 }
 
-// valid characters in URL
-// https://datatracker.ietf.org/doc/html/rfc3986#section-2.1
-// https://datatracker.ietf.org/doc/html/rfc3986#section-2.3
-// https://datatracker.ietf.org/doc/html/rfc3986#section-2.4
-// space is not allowed by rfc3986, but allowed by brpc
-static bool is_valid_char(char c) {
-    static const std::unordered_set<char> other_valid_char = {
-        ':', '/', '?', '#', '[', ']', '@', '!', '$', '&',
-        '\'', '(', ')', '*', '+', ',', ';', '=', '-', '.',
-        '_', '~', '%', ' '
-    };
-
-    return (isalnum(c) || other_valid_char.count(c));
-}
-
 static bool is_all_spaces(const char* p) {
     for (; *p == ' '; ++p) {}
     return !*p;
@@ -178,10 +160,7 @@ int URI::SetHttpURL(const char* url) {
         if (action == URI_PARSE_BREAK) {
             break;
         }
-        if (!is_valid_char(*p)) {
-            _st.set_error(EINVAL, "invalid character in url");
-            return -1;
-        } else if (*p == ':') {
+        if (*p == ':') {
             if (p[1] == '/' && p[2] == '/' && need_scheme) {
                 need_scheme = false;
                 _scheme.assign(start, p - start);
@@ -504,9 +483,9 @@ std::string QueryRemover::modified_query() {
 }
 
 void append_query(std::string *query_string,
-                  const butil::StringPiece& key,
-                  const butil::StringPiece& value) {
-    if (!query_string->empty() && butil::back_char(*query_string) != '?') {
+                  const sgxbutil::StringPiece& key,
+                  const sgxbutil::StringPiece& value) {
+    if (!query_string->empty() && sgxbutil::back_char(*query_string) != '?') {
         query_string->push_back('&');
     }
     query_string->append(key.data(), key.size());

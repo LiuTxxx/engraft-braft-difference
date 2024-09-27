@@ -19,6 +19,7 @@
 #define BRPC_POLICY_CONSTANT_CONCURRENCY_LIMITER_H
 
 #include "brpc/concurrency_limiter.h"
+#include "sgxbutil/atomicops.h"
 
 namespace brpc {
 namespace policy {
@@ -27,7 +28,7 @@ class ConstantConcurrencyLimiter : public ConcurrencyLimiter {
 public:
     explicit ConstantConcurrencyLimiter(int max_concurrency);
     
-    bool OnRequested(int current_concurrency, Controller*) override;
+    bool OnRequested(int current_concurrency) override;
     
     void OnResponded(int error_code, int64_t latency_us) override;
 
@@ -36,7 +37,7 @@ public:
     ConstantConcurrencyLimiter* New(const AdaptiveMaxConcurrency&) const override;
 
 private:
-    butil::atomic<int> _max_concurrency;
+    sgxbutil::atomic<int> _max_concurrency;
 };
 
 }  // namespace policy

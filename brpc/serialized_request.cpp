@@ -17,7 +17,7 @@
 
 
 #include "brpc/serialized_request.h"
-#include "butil/logging.h"
+#include "sgxbutil/logging.h"
 
 namespace brpc {
 
@@ -43,7 +43,7 @@ void SerializedRequest::SharedDtor() {
 }
 
 void SerializedRequest::SetCachedSize(int /*size*/) const {
-    CHECK(false) << "You're not supposed to call " << __func__;
+    CHECK(false) << "You're not supposed to call " << __FUNCTION__;
 }
 const ::google::protobuf::Descriptor* SerializedRequest::descriptor() {
     return SerializedRequestBase::descriptor();
@@ -52,13 +52,6 @@ const ::google::protobuf::Descriptor* SerializedRequest::descriptor() {
 SerializedRequest* SerializedRequest::New() const {
     return new SerializedRequest;
 }
-
-#if GOOGLE_PROTOBUF_VERSION >= 3006000
-SerializedRequest*
-SerializedRequest::New(::google::protobuf::Arena* arena) const {
-    return CreateMaybeMessage<SerializedRequest>(arena);
-}
-#endif
 
 void SerializedRequest::Clear() {
     _serialized.clear();

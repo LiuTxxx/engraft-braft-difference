@@ -24,22 +24,15 @@
 #include <openssl/ssl.h>
 // For some versions of openssl, SSL_* are defined inside this header
 #include <openssl/ossl_typ.h>
-#include <openssl/opensslv.h>
 #else
 #include <mesalink/openssl/ssl.h>
 #include <mesalink/openssl/err.h>
 #include <mesalink/openssl/x509.h>
 #endif
-#include "brpc/socket_id.h"                 // SocketId
-#include "brpc/ssl_options.h"               // ServerSSLOptions
-#include "brpc/adaptive_protocol_type.h"    // AdaptiveProtocolType
+#include "brpc/socket_id.h"            // SocketId
+#include "brpc/ssl_options.h"          // ServerSSLOptions
 
 namespace brpc {
-
-// The calculation method is the same as OPENSSL_VERSION_NUMBER in the openssl/crypto.h file.
-// SSL_VERSION_NUMBER can pass parameter calculation instead of using fixed macro.
-#define SSL_VERSION_NUMBER(major, minor, patch) \
-    ( (major << 28) | (minor << 20) | (patch << 4) )
 
 enum SSLState {
     SSL_UNKNOWN = 0,
@@ -72,6 +65,12 @@ std::ostream& operator<<(std::ostream& os, const CertInfo&);
 
 const char* SSLStateToString(SSLState s);
 
+#ifdef SGX_USE_REMOTE_ATTESTATION
+//- Load enclave specific certificate and private key
+static int LoadEncCertificate(SSL_CTX* ctx, X509* certificate,
+                           EVP_PKEY* private_key, std::vector<std::string>* hostnames);
+#endif
+
 // Initialize locks and callbacks to make SSL work under multi-threaded
 // environment. Return 0 on success, -1 otherwise
 int SSLThreadInit();
@@ -85,16 +84,18 @@ int SSLDHInit();
 SSL_CTX* CreateClientSSLContext(const ChannelSSLOptions& options);
 
 // Create a new SSL_CTX in server mode using `certificate_file'
-// and `private_key_file' and then set the right options and alpn
-// onto it according `options'.Finally, extract hostnames from CN/subject
+// and `private_key_file' and then set the right options onto it
+// according `options'. Finally, extract hostnames from CN/subject
 // fields into `hostnames'
-// Attention: ensure that the life cycle of function return is greater than alpns param.
+#ifdef SGX_USE_REMOTE_ATTESTATION
+SSL_CTX* CreateServerSSLContext(const ServerSSLOptions& options, 
+                                std::vector<std::string>* hostnames);
+#else
 SSL_CTX* CreateServerSSLContext(const std::string& certificate_file,
                                 const std::string& private_key_file,
                                 const ServerSSLOptions& options,
-                                const std::string* alpns,
                                 std::vector<std::string>* hostnames);
-
+#endif
 // Create a new SSL (per connection object) using configurations in `ctx'.
 // Set the required `fd' and mode. `id' will be set into SSL as app data.
 SSL* CreateSSLSession(SSL_CTX* ctx, SocketId id, int fd, bool server_mode);
@@ -110,15 +111,6 @@ SSLState DetectSSLState(int fd, int* error_code);
 
 void Print(std::ostream& os, SSL* ssl, const char* sep);
 void Print(std::ostream& os, X509* cert, const char* sep);
-
-std::string ALPNProtocolToString(const AdaptiveProtocolType& protocol);
-
-// Build a binary formatted ALPN protocol list that OpenSSL's
-// `SSL_CTX_set_alpn_protos` accepts from a C++ string vector.
-bool BuildALPNProtocolList(
-    const std::vector<std::string>& alpn_protocols,
-    std::vector<unsigned char>& result
-);
 
 } // namespace brpc
 

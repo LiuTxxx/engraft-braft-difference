@@ -22,6 +22,7 @@
 #include "brpc/details/http_message.h"         // HttpMessage
 #include "brpc/input_messenger.h"              // InputMessenger
 #include "brpc/protocol.h"
+#include "brpc/shared_object.h"
 
 namespace brpc {
 namespace policy {
@@ -37,14 +38,11 @@ struct CommonStrings {
     std::string CONTENT_TYPE_TEXT;
     std::string CONTENT_TYPE_JSON;
     std::string CONTENT_TYPE_PROTO;
-    std::string CONTENT_TYPE_SPRING_PROTO;
     std::string ERROR_CODE;
     std::string AUTHORIZATION;
     std::string ACCEPT_ENCODING;
     std::string CONTENT_ENCODING;
     std::string CONTENT_LENGTH;
-    std::string EXPECT;
-    std::string CONTINUE_100;
     std::string GZIP;
     std::string CONNECTION;
     std::string KEEP_ALIVE;
@@ -77,70 +75,61 @@ struct CommonStrings {
     std::string GRPC_MESSAGE;
     std::string GRPC_TIMEOUT;
 
-    std::string DEFAULT_PATH;
-
     CommonStrings();
 };
 
 // Used in UT.
-class HttpContext : public ReadableProgressiveAttachment
-                  , public InputMessageBase
+class HttpContext : public InputMessageBase
+                  , public SharedObject
                   , public HttpMessage {
 public:
-    explicit HttpContext(bool read_body_progressively,
-                         HttpMethod request_method = HTTP_METHOD_GET)
+    HttpContext()
         : InputMessageBase()
-        , HttpMessage(read_body_progressively, request_method)
+        , HttpMessage()
         , _is_stage2(false) {
         // add one ref for Destroy
-        butil::intrusive_ptr<HttpContext>(this).detach();
+        sgxbutil::intrusive_ptr<HttpContext>(this).detach();
     }
 
     void AddOneRefForStage2() {
-        butil::intrusive_ptr<HttpContext>(this).detach();
+        sgxbutil::intrusive_ptr<HttpContext>(this).detach();
         _is_stage2 = true;
     }
 
     void RemoveOneRefForStage2() {
-        butil::intrusive_ptr<HttpContext>(this, false);
+        sgxbutil::intrusive_ptr<HttpContext>(this);
     }
 
     // True if AddOneRefForStage2() was ever called.
     bool is_stage2() const { return _is_stage2; }
 
     // @InputMessageBase
-    void DestroyImpl() override {
+    void DestroyImpl() {
         RemoveOneRefForStage2();
     }
 
-    // @ReadableProgressiveAttachment
-    void ReadProgressiveAttachmentBy(ProgressiveReader* r) override {
-        return SetBodyReader(r);
-    }
-
-    void CheckProgressiveRead(const void* arg, Socket *socket);
 
 private:
     bool _is_stage2;
 };
 
 // Implement functions required in protocol.h
-ParseResult ParseHttpMessage(butil::IOBuf *source, Socket *socket,
+ParseResult ParseHttpMessage(sgxbutil::IOBuf *source, Socket *socket,
                              bool read_eof, const void *arg);
 void ProcessHttpRequest(InputMessageBase *msg);
 void ProcessHttpResponse(InputMessageBase* msg);
 bool VerifyHttpRequest(const InputMessageBase* msg);
-void SerializeHttpRequest(butil::IOBuf* request_buf,
+void SerializeHttpRequest(sgxbutil::IOBuf* request_buf,
                           Controller* cntl,
                           const google::protobuf::Message* msg);
-void PackHttpRequest(butil::IOBuf* buf,
+void PackHttpRequest(sgxbutil::IOBuf* buf,
                      SocketMessage** user_message_out,
                      uint64_t correlation_id,
                      const google::protobuf::MethodDescriptor* method,
                      Controller* controller,
-                     const butil::IOBuf& request,
+                     const sgxbutil::IOBuf& request,
                      const Authenticator* auth);
-bool ParseHttpServerAddress(butil::EndPoint* out, const char* server_addr_and_port);
+bool ParseHttpServerAddress(sgxbutil::EndPoint* out, const char* server_addr_and_port);
 const std::string& GetHttpMethodName(const google::protobuf::MethodDescriptor*,
                                      const Controller*);
 
@@ -148,13 +137,12 @@ enum HttpContentType {
     HTTP_CONTENT_OTHERS = 0,
     HTTP_CONTENT_JSON = 1,
     HTTP_CONTENT_PROTO = 2,
-    HTTP_CONTENT_PROTO_TEXT = 3,
 };
 
 // Parse from the textual content type. One type may have more than one literals.
 // Returns a numerical type. *is_grpc_ct is set to true if the content-type is
 // set by gRPC.
-HttpContentType ParseContentType(butil::StringPiece content_type, bool* is_grpc_ct);
+HttpContentType ParseContentType(sgxbutil::StringPiece content_type, bool* is_grpc_ct);
 
 } // namespace policy
 } // namespace brpc

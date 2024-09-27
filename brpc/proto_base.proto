@@ -16,23 +16,7 @@
 // under the License.
 
 syntax="proto2";
-option cc_generic_services = true;
 
 package brpc;
 
-message RedisRequestBase {}
-message RedisResponseBase {}
-
-message EspMessageBase {}
-
-message MemcacheRequestBase {}
-message MemcacheResponseBase {}
-
-message NsheadMessageBase {}
-
 message SerializedRequestBase {}
-message SerializedResponseBase {}
-
-message ThriftFramedMessageBase {}
-
-service BaiduMasterServiceBase {}

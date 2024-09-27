@@ -20,9 +20,9 @@
 #define  BRPC_URI_H
 
 #include <string>                   // std::string
-#include "butil/containers/flat_map.h"
-#include "butil/status.h"
-#include "butil/string_splitter.h"
+#include "sgxbutil/containers/flat_map.h"
+#include "sgxbutil/status.h"
+#include "sgxbutil/string_splitter.h"
 
 // To brpc developers: This is a class exposed to end-user. DON'T put impl.
 // details in this header, use opaque pointers instead.
@@ -52,7 +52,7 @@ namespace brpc {
 class URI {
 public:
     static const size_t QUERY_MAP_INITIAL_BUCKET = 16;
-    typedef butil::FlatMap<std::string, std::string> QueryMap;
+    typedef sgxbutil::FlatMap<std::string, std::string> QueryMap;
     typedef QueryMap::const_iterator QueryIterator;
 
     // You can copy a URI.
@@ -75,7 +75,7 @@ public:
     void operator=(const std::string& url) { SetHttpURL(url); }
 
     // Status of previous SetHttpURL or opreator=.
-    const butil::Status& status() const { return _st; }
+    const sgxbutil::Status& status() const { return _st; }
 
     // Sub fields. Empty string if the field is not set.
 	const std::string& scheme() const { return _scheme; }
@@ -145,7 +145,7 @@ friend class HttpMessage;
     // Iterate _query_map and append all queries to `query'
     void AppendQueryString(std::string* query, bool append_question_mark) const;
 
-    butil::Status                            _st;
+    sgxbutil::Status                            _st;
     int                                     _port;
     mutable bool                            _query_was_modified;
     mutable bool                            _initialized_query_map;
@@ -198,7 +198,7 @@ inline std::ostream& operator<<(std::ostream& os, const URI& uri) {
 }
 
 // Split query in the format of "key1=value1&key2&key3=value3"
-class QuerySplitter : public butil::KeyValuePairsSplitter {
+class QuerySplitter : public sgxbutil::KeyValuePairsSplitter {
 public:
     inline QuerySplitter(const char* str_begin, const char* str_end)
         : KeyValuePairsSplitter(str_begin, str_end, '&', '=')
@@ -208,7 +208,7 @@ public:
         : KeyValuePairsSplitter(str_begin, '&', '=')
     {}
 
-    inline QuerySplitter(const butil::StringPiece &sp)
+    inline QuerySplitter(const sgxbutil::StringPiece &sp)
         : KeyValuePairsSplitter(sp, '&', '=')
     {}
 };
@@ -220,9 +220,9 @@ class QueryRemover {
 public:
     QueryRemover(const std::string* str);
 
-    butil::StringPiece key() { return _qs.key();}
-    butil::StringPiece value() { return _qs.value(); }
-    butil::StringPiece key_and_value() { return _qs.key_and_value(); }
+    sgxbutil::StringPiece key() { return _qs.key();}
+    sgxbutil::StringPiece value() { return _qs.value(); }
+    sgxbutil::StringPiece key_and_value() { return _qs.key_and_value(); }
 
     // Move splitter forward.
     QueryRemover& operator++();
@@ -254,8 +254,8 @@ private:
 // "/some/path?" -> "/some/path?key=value"
 // "/some/path?key1=value1" -> "/some/path?key1=value1&key=value"
 void append_query(std::string *query_string,
-                  const butil::StringPiece& key,
-                  const butil::StringPiece& value);
+                  const sgxbutil::StringPiece& key,
+                  const sgxbutil::StringPiece& value);
 
 } // namespace brpc
 

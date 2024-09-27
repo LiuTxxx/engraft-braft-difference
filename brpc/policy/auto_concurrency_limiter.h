@@ -18,10 +18,10 @@
 #ifndef BRPC_POLICY_AUTO_CONCURRENCY_LIMITER_H
 #define BRPC_POLICY_AUTO_CONCURRENCY_LIMITER_H
 
-#include "bvar/bvar.h"
-#include "butil/containers/bounded_queue.h"
+// #include "bvar/bvar.h"
+#include "sgxbutil/containers/bounded_queue.h"
 #include "brpc/concurrency_limiter.h"
-
+#include "sgxbutil/atomicops.h"
 namespace brpc {
 namespace policy {
 
@@ -29,7 +29,7 @@ class AutoConcurrencyLimiter : public ConcurrencyLimiter {
 public:
     AutoConcurrencyLimiter();
 
-    bool OnRequested(int current_concurrency, Controller*) override;
+    bool OnRequested(int current_concurrency) override;
     
     void OnResponded(int error_code, int64_t latency_us) override;
 
@@ -62,8 +62,6 @@ private:
     void UpdateMinLatency(int64_t latency_us);
     void UpdateQps(double qps);
 
-    void AdjustMaxConcurrency(int next_max_concurrency);
-
     // modified per sample-window or more
     int _max_concurrency;
     int64_t _remeasure_start_us;
@@ -73,12 +71,12 @@ private:
     double _explore_ratio;
   
     // modified per sample.
-    BAIDU_CACHELINE_ALIGNMENT butil::atomic<int64_t> _last_sampling_time_us;
-    butil::Mutex _sw_mutex;
+    sgxbutil::atomic<int64_t> BAIDU_CACHELINE_ALIGNMENT _last_sampling_time_us;
+    sgxbutil::Mutex _sw_mutex;
     SampleWindow _sw;
 
     // modified per request.
-    BAIDU_CACHELINE_ALIGNMENT butil::atomic<int32_t> _total_succ_req;
+    sgxbutil::atomic<int32_t> BAIDU_CACHELINE_ALIGNMENT _total_succ_req;
 };
 
 }  // namespace policy

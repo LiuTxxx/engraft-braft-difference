@@ -16,14 +16,10 @@
 // under the License.
 
 
-#include "butil/build_config.h"
-
-#if defined(OS_LINUX)
-
 #include <sys/epoll.h>                             // epoll_create
 #include <sys/types.h>                             // socketpair
 #include <sys/socket.h>                            // ^
-#include "butil/fd_guard.h"                         // fd_guard
+#include "sgxbutil/fd_guard.h"                         // fd_guard
 #include "brpc/details/has_epollrdhup.h"
 
 #ifndef EPOLLRDHUP
@@ -33,11 +29,11 @@
 namespace brpc {
 
 static unsigned int check_epollrdhup() {
-    butil::fd_guard epfd(epoll_create(16));
+    sgxbutil::fd_guard epfd(epoll_create(16));
     if (epfd < 0) {
         return 0;
     }
-    butil::fd_guard fds[2];
+    sgxbutil::fd_guard fds[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, (int*)fds) < 0) {
         return 0;
     }
@@ -61,11 +57,3 @@ static unsigned int check_epollrdhup() {
 extern const unsigned int has_epollrdhup = check_epollrdhup();
 
 } // namespace brpc
-
-#else
-
-namespace brpc {
-extern const unsigned int has_epollrdhup = false;
-}
-
-#endif // defined(OS_LINUX)

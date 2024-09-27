@@ -20,9 +20,9 @@
 
 #include <limits>                                       // std::numeric_limits
 #include <vector>
-#include "butil/containers/bounded_queue.h"              // butil::BoundedQueue
-#include "butil/containers/flat_map.h"                   // butil::FlatMap
-#include "butil/containers/case_ignored_flat_map.h"      // butil::FlatMap
+#include "sgxbutil/containers/bounded_queue.h"              // sgxbutil::BoundedQueue
+#include "sgxbutil/containers/flat_map.h"                   // sgxbutil::FlatMap
+#include "sgxbutil/containers/case_ignored_flat_map.h"      // sgxbutil::FlatMap
 #include "brpc/details/hpack-static-table.h"       // s_static_headers
 
 
@@ -51,8 +51,8 @@ struct HeaderAndHashCode {
 
 struct HeaderHasher {
     size_t operator()(const HPacker::Header& h) const {
-        return butil::CaseIgnoredHasher()(h.name)
-            * 101 + butil::DefaultHasher<std::string>()(h.value);
+        return sgxbutil::CaseIgnoredHasher()(h.name)
+            * 101 + sgxbutil::DefaultHasher<std::string>()(h.value);
     }
     size_t operator()(const HeaderAndHashCode& h) const {
         return h.hash_code;
@@ -61,8 +61,8 @@ struct HeaderHasher {
 
 struct HeaderEqualTo {
     bool operator()(const HPacker::Header& h1, const HPacker::Header& h2) const {
-        return butil::CaseIgnoredEqual()(h1.name, h2.name)
-            && butil::DefaultEqualTo<std::string>()(h1.value, h2.value);
+        return sgxbutil::CaseIgnoredEqual()(h1.name, h2.name)
+            && sgxbutil::DefaultEqualTo<std::string>()(h1.value, h2.value);
     }
     bool operator()(const HPacker::Header& h1, const HeaderAndHashCode& h2) const {
         return operator()(h1, *h2.header);
@@ -203,7 +203,7 @@ private:
     uint64_t _add_times;  // Increase when adding a new entry.
     size_t _max_size;
     size_t _size;
-    butil::BoundedQueue<Header> _header_queue;
+    sgxbutil::BoundedQueue<Header> _header_queue;
 
     // -----------------------  Encoder only ----------------------------
     // Indexes that map entry to the latest time it was added.
@@ -213,8 +213,8 @@ private:
     // Since the encoder just cares whether this header is in the index table
     // rather than which the index number is, only the latest entry of the same
     // header is indexed here, which is definitely the last one to be removed.
-    butil::FlatMap<Header, uint64_t, HeaderHasher, HeaderEqualTo> _header_index;
-    butil::CaseIgnoredFlatMap<uint64_t> _name_index;
+    sgxbutil::FlatMap<Header, uint64_t, HeaderHasher, HeaderEqualTo> _header_index;
+    sgxbutil::CaseIgnoredFlatMap<uint64_t> _name_index;
 };
 
 int IndexTable::Init(const IndexTableOptions& options) {
@@ -233,9 +233,9 @@ int IndexTable::Init(const IndexTableOptions& options) {
         LOG(ERROR) << "Fail to malloc space for " << num_headers << " headers";
         return -1;
     }
-    butil::BoundedQueue<Header> tmp(
+    sgxbutil::BoundedQueue<Header> tmp(
         header_queue_storage, num_headers * sizeof(Header),
-        butil::OWNS_STORAGE);
+        sgxbutil::OWNS_STORAGE);
     _header_queue.swap(tmp);
     _start_index = options.start_index;
     _need_indexes = options.need_indexes;
@@ -348,7 +348,7 @@ private:
 class HuffmanEncoder {
 DISALLOW_COPY_AND_ASSIGN(HuffmanEncoder);
 public:
-    HuffmanEncoder(butil::IOBufAppender* out, const HuffmanCode* table)
+    HuffmanEncoder(sgxbutil::IOBufAppender* out, const HuffmanCode* table)
         : _out(out)
         , _table(table)
         , _partial_byte(0)
@@ -395,7 +395,7 @@ public:
     uint32_t out_bytes() const { return _out_bytes; }
 
 private:
-    butil::IOBufAppender* _out;
+    sgxbutil::IOBufAppender* _out;
     const HuffmanCode* _table;
     uint8_t  _partial_byte;
     uint16_t _remain_bit;
@@ -478,7 +478,7 @@ private:
 // Primitive Type Representations
 
 // Encode variant intger and return the size
-inline void EncodeInteger(butil::IOBufAppender* out, uint8_t msb,
+inline void EncodeInteger(sgxbutil::IOBufAppender* out, uint8_t msb,
                           uint8_t prefix_size, uint32_t value) {
     uint8_t max_prefix_value = (1 << prefix_size) - 1;
     if (value < max_prefix_value) {
@@ -489,7 +489,8 @@ inline void EncodeInteger(butil::IOBufAppender* out, uint8_t msb,
     value -= max_prefix_value;
     msb |= max_prefix_value;
     out->push_back(msb);
-    for (; value >= 128; ) {
+    size_t out_bytes = 1;
+    for (; value >= 128; ++out_bytes) {
         const uint8_t c = (value & 0x7f) | 0x80;
         value >>= 7;
         out->push_back(c);
@@ -530,7 +531,7 @@ static void CreateStaticTableOnceOrDie() {
 // Assume that no header would be larger than 10MB
 static const size_t MAX_HPACK_INTEGER = 10 * 1024 * 1024ul;
 
-inline ssize_t DecodeInteger(butil::IOBufBytesIterator& iter,
+inline ssize_t DecodeInteger(sgxbutil::IOBufBytesIterator& iter,
                              uint8_t prefix_size, uint32_t* value) {
     if (iter == NULL) {
         return 0; // No enough data
@@ -567,13 +568,13 @@ inline ssize_t DecodeInteger(butil::IOBufBytesIterator& iter,
 }
 
 template <bool LOWERCASE> // use template to remove dead branches.
-inline void EncodeString(butil::IOBufAppender* out, const std::string& s,
+inline void EncodeString(sgxbutil::IOBufAppender* out, const std::string& s,
                          bool huffman_encoding) {
     if (!huffman_encoding) {
         EncodeInteger(out, 0x00, 7, s.size());
         if (LOWERCASE) {
             for (size_t i = 0; i < s.size(); ++i) {
-                out->push_back(butil::ascii_tolower(s[i]));
+                out->push_back(sgxbutil::ascii_tolower(s[i]));
             }
         } else {
             out->append(s);
@@ -584,7 +585,7 @@ inline void EncodeString(butil::IOBufAppender* out, const std::string& s,
     uint32_t bit_len = 0;
     if (LOWERCASE) {
         for (size_t i = 0; i < s.size(); ++i) {
-            bit_len += s_huffman_table[(uint8_t)butil::ascii_tolower(s[i])].bit_len;
+            bit_len += s_huffman_table[(uint8_t)sgxbutil::ascii_tolower(s[i])].bit_len;
         }
     } else {
         for (size_t i = 0; i < s.size(); ++i) {
@@ -595,7 +596,7 @@ inline void EncodeString(butil::IOBufAppender* out, const std::string& s,
     HuffmanEncoder e(out, s_huffman_table);
     if (LOWERCASE) {
         for (size_t i = 0; i < s.size(); ++i) {
-            e.Encode(butil::ascii_tolower(s[i]));
+            e.Encode(sgxbutil::ascii_tolower(s[i]));
         }
     } else {
         for (size_t i = 0; i < s.size(); ++i) {
@@ -605,7 +606,7 @@ inline void EncodeString(butil::IOBufAppender* out, const std::string& s,
     e.EndStream();
 }
 
-inline ssize_t DecodeString(butil::IOBufBytesIterator& iter, std::string* out) {
+inline ssize_t DecodeString(sgxbutil::IOBufBytesIterator& iter, std::string* out) {
     if (iter == NULL) {
         return 0;
     }
@@ -695,7 +696,7 @@ inline int HPacker::FindNameFromIndexTable(const std::string& name) const {
     return _encode_table->GetIndexOfName(name);
 }
 
-void HPacker::Encode(butil::IOBufAppender* out, const Header& header,
+void HPacker::Encode(sgxbutil::IOBufAppender* out, const Header& header,
                      const HPackOptions& options) {
     if (options.index_policy != HPACK_NEVER_INDEX_HEADER) {
         const int index = FindHeaderFromIndexTable(header);
@@ -733,7 +734,7 @@ inline const HPacker::Header* HPacker::HeaderAt(int index) const {
 }
 
 inline ssize_t HPacker::DecodeWithKnownPrefix(
-    butil::IOBufBytesIterator& iter, Header* h, uint8_t prefix_size) const {
+    sgxbutil::IOBufBytesIterator& iter, Header* h, uint8_t prefix_size) const {
     int index = 0;
     ssize_t index_bytes = DecodeInteger(iter, prefix_size, (uint32_t*)&index);
     ssize_t name_bytes = 0;
@@ -764,7 +765,7 @@ inline ssize_t HPacker::DecodeWithKnownPrefix(
     return index_bytes + name_bytes + value_bytes;
 }
 
-ssize_t HPacker::Decode(butil::IOBufBytesIterator& iter, Header* h) {
+ssize_t HPacker::Decode(sgxbutil::IOBufBytesIterator& iter, Header* h) {
     if (iter == NULL) {
         return 0;
     }
@@ -870,7 +871,7 @@ void tolower(std::string* s) {
     const char* d = s->c_str();
     for (size_t i = 0; i < s->size(); ++i) {
         const char c = d[i];
-        const char c2 = butil::ascii_tolower(c);
+        const char c2 = sgxbutil::ascii_tolower(c);
         if (c2 != c) {
             (*s)[i] = c2;
         }

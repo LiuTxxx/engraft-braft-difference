@@ -16,7 +16,7 @@
 // under the License.
 
 
-#include <google/protobuf/descriptor.h>
+#include "google/protobuf/descriptor.h"
 #include "brpc/log.h"
 #include "brpc/restful.h"
 #include "brpc/details/method_status.h"
@@ -27,7 +27,7 @@ namespace brpc {
 // Define in http_parser.cpp
 extern bool is_url_char(char c);
 
-inline butil::StringPiece remove_last_char(butil::StringPiece s) {
+inline sgxbutil::StringPiece remove_last_char(sgxbutil::StringPiece s) {
     if (!s.empty()) {
         s.remove_suffix(1);
     }
@@ -56,10 +56,10 @@ std::string RestfulMethodPath::to_string() const {
     if (has_wildcard) {
         s.append(prefix);
         s.push_back('*');
-        butil::StringPiece tmp = remove_last_char(postfix);
+        sgxbutil::StringPiece tmp = remove_last_char(postfix);
         s.append(tmp.data(), tmp.size());
     } else {
-        butil::StringPiece tmp = remove_last_char(prefix);
+        sgxbutil::StringPiece tmp = remove_last_char(prefix);
         s.append(tmp.data(), tmp.size());        
     }
     return s;
@@ -79,7 +79,7 @@ std::ostream& operator<<(std::ostream& os, const DebugPrinter& p) {
     return os;
 }
 
-bool ParseRestfulPath(butil::StringPiece path,
+bool ParseRestfulPath(sgxbutil::StringPiece path,
                       RestfulMethodPath* path_out) {
     path.trim_spaces();
     if (path.empty()) {
@@ -106,8 +106,8 @@ bool ParseRestfulPath(butil::StringPiece path,
     }
     path_out->has_wildcard = (star_index >= 0);
 
-    butil::StringPiece first_part;
-    butil::StringPiece second_part;
+    sgxbutil::StringPiece first_part;
+    sgxbutil::StringPiece second_part;
     if (star_index < 0) {
         first_part = path;
     } else {
@@ -129,10 +129,10 @@ bool ParseRestfulPath(butil::StringPiece path,
         first_part.remove_prefix(i);
     }
     const size_t slash_pos = first_part.find('/');
-    if (slash_pos != butil::StringPiece::npos) {
+    if (slash_pos != sgxbutil::StringPiece::npos) {
         path_out->service_name.assign(first_part.data(), slash_pos);
-        butil::StringPiece prefix_raw = first_part.substr(slash_pos + 1);
-        butil::StringSplitter sp(prefix_raw.data(),
+        sgxbutil::StringPiece prefix_raw = first_part.substr(slash_pos + 1);
+        sgxbutil::StringSplitter sp(prefix_raw.data(),
                                 prefix_raw.data() + prefix_raw.size(), '/');
         for (; sp; ++sp) {
             // Put first component into service_name and others into prefix.
@@ -174,7 +174,7 @@ bool ParseRestfulPath(butil::StringPiece path,
         if (second_part.empty() || second_part[0] == '/') {
             path_out->postfix.push_back('/');
         }
-        butil::StringSplitter sp2(second_part.data(),
+        sgxbutil::StringSplitter sp2(second_part.data(),
                                  second_part.data() + second_part.size(), '/');
         for (; sp2; ++sp2) {
             if (path_out->postfix.empty()) {
@@ -186,14 +186,14 @@ bool ParseRestfulPath(butil::StringPiece path,
     } else {
         path_out->postfix.push_back('/');
     }
-    VLOG(RPC_VLOG_LEVEL + 1) << "orig_path=" << path
-                             << " first_part=" << first_part
-                             << " second_part=" << second_part
-                             << " path=" << DebugPrinter(*path_out);
+    // VLOG(RPC_VLOG_LEVEL + 1) << "orig_path=" << path
+    //                          << " first_part=" << first_part
+    //                          << " second_part=" << second_part
+    //                          << " path=" << DebugPrinter(*path_out);
     return true;
 }
 
-bool ParseRestfulMappings(const butil::StringPiece& mappings,
+bool ParseRestfulMappings(const sgxbutil::StringPiece& mappings,
                           std::vector<RestfulMapping>* list) {
     if (list == NULL) {
         LOG(ERROR) << "Param[list] is NULL";
@@ -201,7 +201,7 @@ bool ParseRestfulMappings(const butil::StringPiece& mappings,
     }
     list->clear();
     list->reserve(8);
-    butil::StringSplitter sp(
+    sgxbutil::StringSplitter sp(
         mappings.data(), mappings.data() + mappings.size(), ',');
     int nmappings = 0;
     for (; sp; ++sp) {
@@ -222,13 +222,13 @@ bool ParseRestfulMappings(const butil::StringPiece& mappings,
             if (i < n && p[i] == '>') {
                 RestfulMapping m;
                 // Parse left part of the arrow as url path.
-                butil::StringPiece path(sp.field(), equal_sign_pos);
+                sgxbutil::StringPiece path(sp.field(), equal_sign_pos);
                 if (!ParseRestfulPath(path, &m.path)) {
                     LOG(ERROR) << "Fail to parse path=`" << path << '\'';
                     return false;
                 }
                 // Treat right part of the arrow as method_name.
-                butil::StringPiece method_name_piece(p + i + 1, n - (i + 1));
+                sgxbutil::StringPiece method_name_piece(p + i + 1, n - (i + 1));
                 method_name_piece.trim_spaces();
                 if (method_name_piece.empty()) {
                     LOG(ERROR) << "No method name in " << nmappings
@@ -245,7 +245,7 @@ bool ParseRestfulMappings(const butil::StringPiece& mappings,
         // If we don't get a valid mapping from the string, issue error.
         if (!added_sth) {
             LOG(ERROR) << "Invalid mapping: "
-                       << butil::StringPiece(sp.field(), sp.length());
+                       << sgxbutil::StringPiece(sp.field(), sp.length());
             return false;
         }
     }
@@ -349,21 +349,21 @@ void RestfulMap::PrepareForFinding() {
     }
     std::sort(_sorted_paths.begin(), _sorted_paths.end(),
               CompareItemInPathList());
-    if (VLOG_IS_ON(RPC_VLOG_LEVEL + 1)) {
-        std::ostringstream os;
-        os << "_sorted_paths(" << _service_name << "):";
-        for (PathList::const_iterator it = _sorted_paths.begin();
-             it != _sorted_paths.end(); ++it) {
-            os << ' ' << (*it)->path;
-        }
-        VLOG(RPC_VLOG_LEVEL + 1) << os.str();
-    }
+    // if (VLOG_IS_ON(RPC_VLOG_LEVEL + 1)) {
+    //     std::ostringstream os;
+    //     os << "_sorted_paths(" << _service_name << "):";
+    //     for (PathList::const_iterator it = _sorted_paths.begin();
+    //          it != _sorted_paths.end(); ++it) {
+    //         os << ' ' << (*it)->path;
+    //     }
+    //     VLOG(RPC_VLOG_LEVEL + 1) << os.str();
+    // }
 }
 
 // Remove last component from the (normalized) path:
 // Say /A/B/C/ -> /A/B/
 // Notice that /A/ is modified to / and returns true.
-static bool RemoveLastComponent(butil::StringPiece* path) {
+static bool RemoveLastComponent(sgxbutil::StringPiece* path) {
     if (path->empty()) {
         return false;
     }
@@ -379,10 +379,10 @@ static bool RemoveLastComponent(butil::StringPiece* path) {
 }
 
 // Normalized as /A/B/C/
-static std::string NormalizeSlashes(const butil::StringPiece& path) {
+static std::string NormalizeSlashes(const sgxbutil::StringPiece& path) {
     std::string out_path;
     out_path.reserve(path.size() + 2);
-    butil::StringSplitter sp(path.data(), path.data() + path.size(), '/');
+    sgxbutil::StringSplitter sp(path.data(), path.data() + path.size(), '/');
     for (; sp; ++sp) {
         out_path.push_back('/');
         out_path.append(sp.field(), sp.length());
@@ -401,21 +401,21 @@ size_t RestfulMap::RemoveByPathString(const std::string& path) {
 }
 
 struct PrefixLess {
-    bool operator()(const butil::StringPiece& path,
+    bool operator()(const sgxbutil::StringPiece& path,
                     const RestfulMethodProperty* p) const {
         return path < p->path.prefix;
     }
 };
 
 const Server::MethodProperty*
-RestfulMap::FindMethodProperty(const butil::StringPiece& method_path,
+RestfulMap::FindMethodProperty(const sgxbutil::StringPiece& method_path,
                                std::string* unresolved_path) const {
     if (_sorted_paths.empty()) {
         LOG(ERROR) << "_sorted_paths is empty, method_path=" << method_path;
         return NULL;
     }
     const std::string full_path = NormalizeSlashes(method_path);
-    butil::StringPiece sub_path = full_path;
+    sgxbutil::StringPiece sub_path = full_path;
     PathList::const_iterator last_find_pos = _sorted_paths.end();
     do {
         if (last_find_pos == _sorted_paths.begin()) {
@@ -431,14 +431,14 @@ RestfulMap::FindMethodProperty(const butil::StringPiece& method_path,
         
         bool matched = false;
         bool remove_heading_slash_from_unresolved = false;
-        butil::StringPiece left;
+        sgxbutil::StringPiece left;
         do {
             const RestfulMethodPath& rpath = (*it)->path;
             if (!sub_path.starts_with(rpath.prefix)) {
-                VLOG(RPC_VLOG_LEVEL + 1)
-                    << "sub_path=" << sub_path << " does not match prefix="
-                    << rpath.prefix << " full_path=" << full_path
-                    << " candidate=" << DebugPrinter(rpath);
+                // VLOG(RPC_VLOG_LEVEL + 1)
+                //     << "sub_path=" << sub_path << " does not match prefix="
+                //     << rpath.prefix << " full_path=" << full_path
+                //     << " candidate=" << DebugPrinter(rpath);
                 // NOTE: We can stop trying patterns before *it because pattern
                 // "/A*B => M" is disabled which makes prefixes of all restful
                 // paths end with /. If `full_path' matches with a prefix, the
@@ -463,25 +463,25 @@ RestfulMap::FindMethodProperty(const butil::StringPiece& method_path,
             if (left.ends_with(rpath.postfix)) {
                 left.remove_suffix(rpath.postfix.size());
                 if (!left.empty() && !rpath.has_wildcard) {
-                    VLOG(RPC_VLOG_LEVEL + 1)
-                        << "Unmatched extra=" << left
-                        << " sub_path=" << sub_path
-                        << " full_path=" << full_path
-                        << " candidate=" << DebugPrinter(rpath);
+                    // VLOG(RPC_VLOG_LEVEL + 1)
+                    //     << "Unmatched extra=" << left
+                    //     << " sub_path=" << sub_path
+                    //     << " full_path=" << full_path
+                    //     << " candidate=" << DebugPrinter(rpath);
                 } else {
                     matched = true;
-                    VLOG(RPC_VLOG_LEVEL + 1)
-                        << "Matched sub_path=" << sub_path
-                        << " full_path=" << full_path
-                        << " with restful_path=" << DebugPrinter(rpath);
+                    // VLOG(RPC_VLOG_LEVEL + 1)
+                    //     << "Matched sub_path=" << sub_path
+                    //     << " full_path=" << full_path
+                    //     << " with restful_path=" << DebugPrinter(rpath);
                     break;
                 }
             }
             if (it == _sorted_paths.begin()) {
-                VLOG(RPC_VLOG_LEVEL + 1)
-                    << "Hit beginning, sub_path=" << sub_path
-                    << " full_path=" << full_path
-                    << " candidate=" << DebugPrinter(rpath);
+                // VLOG(RPC_VLOG_LEVEL + 1)
+                //     << "Hit beginning, sub_path=" << sub_path
+                //     << " full_path=" << full_path
+                //     << " candidate=" << DebugPrinter(rpath);
                 return NULL;
             }
             // Matched with prefix but postfix or wildcard, moving forward

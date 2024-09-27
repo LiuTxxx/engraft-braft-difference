@@ -19,14 +19,11 @@
 #ifndef BRPC_PROFILER_LINKER_H
 #define BRPC_PROFILER_LINKER_H
 
-#if defined(BRPC_ENABLE_CPU_PROFILER) || defined(BAIDU_RPC_ENABLE_CPU_PROFILER)
-#include "butil/gperftools_profiler.h"
-#endif
+// #if defined(BRPC_ENABLE_CPU_PROFILER) || defined(BAIDU_RPC_ENABLE_CPU_PROFILER)
+// #include "butil/gperftools_profiler.h"
+// #endif
 
 namespace brpc {
-
-// defined in src/brpc/builtin/index_service.cpp
-extern bool cpu_profiler_enabled;
 
 // defined in src/brpc/controller.cpp
 extern int PROFILER_LINKER_DUMMY;
@@ -39,7 +36,6 @@ struct ProfilerLinker {
     inline ProfilerLinker() {
         
 #if defined(BRPC_ENABLE_CPU_PROFILER) || defined(BAIDU_RPC_ENABLE_CPU_PROFILER)
-        cpu_profiler_enabled = true;
         // compiler has no way to tell if PROFILER_LINKER_DUMMY is 0 or not,
         // so it has to link the function inside the branch.
         if (PROFILER_LINKER_DUMMY != 0/*must be false*/) {

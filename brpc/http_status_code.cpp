@@ -18,9 +18,9 @@
 
 #include <stdio.h>                                  // snprintf
 
-#include "butil/logging.h"                           // BAIDU_*
-#include "butil/macros.h"                            // ARRAY_SIZE
-#include "butil/thread_local.h"                      // thread_local
+#include "sgxbutil/logging.h"                           // BAIDU_*
+#include "sgxbutil/macros.h"                            // ARRAY_SIZE
+#include "sgxbutil/thread_local.h"                      // thread_local
 #include "brpc/errno.pb.h"
 #include "brpc/http_status_code.h"
 

@@ -17,7 +17,6 @@
 
 
 
-#include <openssl/bio.h>
 #ifndef USE_MESALINK
 
 #include <sys/socket.h>                // recv
@@ -25,12 +24,17 @@
 #include <openssl/err.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
-#include "butil/unique_ptr.h"
-#include "butil/logging.h"
-#include "butil/ssl_compat.h"
-#include "butil/string_splitter.h"
+#include <memory>
+#include "sgxbutil/logging.h"
+#include "sgxbutil/ssl_compat.h"
+#include "sgxbutil/string_splitter.h"
 #include "brpc/socket.h"
 #include "brpc/details/ssl_helper.h"
+#ifdef SGX_USE_REMOTE_ATTESTATION
+#include "sgxbutil/attestation/attestation_helper.h"
+extern X509* raft_node_cert;
+extern EVP_PKEY* raft_node_pkey;
+#endif
 
 namespace brpc {
 
@@ -68,10 +72,10 @@ const char* SSLStateToString(SSLState s) {
 
 static int ParseSSLProtocols(const std::string& str_protocol) {
     int protocol_flag = 0;
-    butil::StringSplitter sp(str_protocol.data(),
+    sgxbutil::StringSplitter sp(str_protocol.data(),
                              str_protocol.data() + str_protocol.size(), ',');
     for (; sp; ++sp) {
-        butil::StringPiece protocol(sp.field(), sp.length());
+        sgxbutil::StringPiece protocol(sp.field(), sp.length());
         protocol.trim_spaces();
         if (strncasecmp(protocol.data(), "SSLv3", protocol.size()) == 0) {
             protocol_flag |= SSLv3;
@@ -126,22 +130,23 @@ std::ostream& operator<<(std::ostream& os, const CertInfo& cert) {
 }
 
 static void SSLInfoCallback(const SSL* ssl, int where, int ret) {
-    (void)ret;
-    SocketUniquePtr s;
-    SocketId id = (SocketId)SSL_get_app_data((SSL*)ssl);
-    if (Socket::Address(id, &s) != 0) {
-        // Already failed
-        return;
-    }
+    //- TODO: 在OpenSSL 1.1.1版本（11 Sep 2018） 下，没有修复该CVE，先注释掉以便调试
+    // (void)ret;
+    // SocketUniquePtr s;
+    // SocketId id = (SocketId)SSL_get_app_data((SSL*)ssl);
+    // if (Socket::Address(id, &s) != 0) {
+    //     // Already failed
+    //     return;
+    // }
 
-    if (where & SSL_CB_HANDSHAKE_START) {
-        if (s->ssl_state() == SSL_CONNECTED) {
-            // Disable renegotiation (CVE-2009-3555)
-            LOG(ERROR) << "Close " << *s << " due to insecure "
-                       << "renegotiation detected (CVE-2009-3555)";
-            s->SetFailed();
-        }
-    }
+    // if (where & SSL_CB_HANDSHAKE_START) {
+    //     if (s->ssl_state() == SSL_CONNECTED) {
+    //         // Disable renegotiation (CVE-2009-3555)
+    //         LOG(ERROR) << "Close " << *s << " due to insecure "
+    //                    << "renegotiation detected (CVE-2009-3555)";
+    //         s->SetFailed();
+    //     }
+    // }
 }
 
 static void SSLMessageCallback(int write_p, int version, int content_type,
@@ -213,7 +218,7 @@ void ExtractHostnames(X509* x, std::vector<std::string>* hostnames) {
     STACK_OF(GENERAL_NAME)* names = (STACK_OF(GENERAL_NAME)*)
             X509_get_ext_d2i(x, NID_subject_alt_name, NULL, NULL);
     if (names) {
-        for (size_t i = 0; i < static_cast<size_t>(sk_GENERAL_NAME_num(names)); i++) {
+        for (int i = 0; i < sk_GENERAL_NAME_num(names); i++) {
             char* str = NULL;
             GENERAL_NAME* name = sk_GENERAL_NAME_value(names, i);
             if (name->type == GEN_DNS) {
@@ -321,7 +326,7 @@ static int LoadCertificate(SSL_CTX* ctx,
         return -1;
     }
     
-    // Load the main certificate
+    // Load the main certficate
     if (SSL_CTX_use_certificate(ctx, x.get()) != 1) {
         LOG(ERROR) << "Fail to load " << certificate << ": "
                    << SSLError(ERR_get_error());
@@ -351,7 +356,7 @@ static int LoadCertificate(SSL_CTX* ctx,
     if (err != 0 && (ERR_GET_LIB(err) != ERR_LIB_PEM
                      || ERR_GET_REASON(err) != PEM_R_NO_START_LINE)) {
         LOG(ERROR) << "Fail to read chain certificate in "
-                   << certificate << ": " << SSLError(err);
+                   << certificate << ": " << SSLError(ERR_get_error());
         return -1;
     }
     ERR_clear_error();
@@ -368,6 +373,167 @@ static int LoadCertificate(SSL_CTX* ctx,
     }
     return 0;
 }
+
+#ifdef SGX_USE_REMOTE_ATTESTATION
+//- This function load enclave cert and private key for a SSL context
+//- Note that cert and private key will be generated inside this function
+static int LoadEncCertificate(SSL_CTX* ctx, X509* certificate,
+                           EVP_PKEY* private_key, std::vector<std::string>* hostnames) {
+    if (certificate == NULL || private_key == NULL) {
+        LOG(ERROR) << "Func: " << __FUNCTION__ << " BAD ERROR: cert/pkey is NULL";
+    }
+    //- Set certificate and private key
+    if (!SSL_CTX_use_certificate(ctx, certificate)) {
+        LOG(ERROR) << "Func: " << __FUNCTION__ << " Cannot load certificate on the server";
+        return -1;
+    }
+    if (!SSL_CTX_use_PrivateKey(ctx, private_key)) {
+        LOG(ERROR) << "Func: " << __FUNCTION__ << " Cannot load private key on the server";
+        return -1;
+    }
+
+    // Validate certificate and private key 
+    if (SSL_CTX_check_private_key(ctx) != 1) {
+        LOG(ERROR) << "Fail to verify " << private_key << ": "
+                   << SSLError(ERR_get_error());
+        return -1;
+    }
+
+    if (hostnames != NULL) {
+        ExtractHostnames(certificate, hostnames);
+    }
+    return 0;
+}
+#endif
+
+#ifdef SGX_USE_REMOTE_ATTESTATION
+//- Rewrite SetSSLOptions, CreateClientSSLContext and CreateServerSSLContext for RA
+static int SetSSLOptions(SSL_CTX* ctx, const std::string& ciphers,
+                         int protocols, const VerifyOptions& verify) {
+    long ssloptions = SSL_OP_ALL    // All known workarounds for bugs
+            | SSL_OP_NO_SSLv2
+#ifdef SSL_OP_NO_COMPRESSION
+            | SSL_OP_NO_COMPRESSION
+#endif  // SSL_OP_NO_COMPRESSION
+            | SSL_OP_CIPHER_SERVER_PREFERENCE
+            | SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;
+
+    //- To enforce TLS1.3
+    ssloptions |= SSL_OP_NO_SSLv3;
+    ssloptions |= SSL_OP_NO_TLSv1;
+    ssloptions |= SSL_OP_NO_TLSv1_1;
+    ssloptions |= SSL_OP_NO_TLSv1_2;
+
+    SSL_CTX_set_options(ctx, ssloptions);
+
+    long sslmode = SSL_MODE_ENABLE_PARTIAL_WRITE
+            | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER;
+    SSL_CTX_set_mode(ctx, sslmode);
+
+    // const char* cipher_list_tlsv13 = "TLS13-AES-256-GCM-SHA384:TLS13-AES-128-GCM-SHA256";
+    const char* cipher_list_tlsv13 = "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256";
+    const char* supported_curves = "P-521:P-384:P-256";
+    //- Always set expected cipher list and regardless of ciphers param
+    if (SSL_CTX_set_ciphersuites(ctx, cipher_list_tlsv13) != 1) {
+        LOG(ERROR) << "Fail to set cipher list to " << cipher_list_tlsv13
+                   << ": " << SSLError(ERR_get_error());
+        return -1;
+    }
+    if (SSL_CTX_set1_curves_list(ctx, supported_curves) != 1) {
+        LOG(ERROR) << "Fail to set curves list to " << supported_curves
+                   << ": " << SSLError(ERR_get_error());
+        return -1;
+    }
+
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, &verify_callback);
+
+    SSL_CTX_set_info_callback(ctx, SSLInfoCallback);
+    // To detect and protect from heartbleed attack
+    SSL_CTX_set_msg_callback(ctx, SSLMessageCallback);
+    return 0;
+}
+
+SSL_CTX* CreateClientSSLContext(const ChannelSSLOptions& options) {
+    LOG(INFO) << "Func: " << __FUNCTION__ 
+            << " options.client_cert.certificate.empty() = " 
+            << options.client_cert.certificate.empty();
+    std::unique_ptr<SSL_CTX, FreeSSLCTX> ssl_ctx(
+        SSL_CTX_new(SSLv23_client_method()));
+    if (!ssl_ctx) {
+        LOG(ERROR) << "Fail to new SSL_CTX: " << SSLError(ERR_get_error());
+        return NULL;
+    }
+    //- Load certificate and private key for client SSL context.
+    LoadEncCertificate(ssl_ctx.get(), raft_node_cert, raft_node_pkey, NULL);
+
+    int protocols = ParseSSLProtocols(options.protocols);
+    if (protocols < 0
+        || SetSSLOptions(ssl_ctx.get(), options.ciphers,
+                         protocols, options.verify) != 0) {
+        return NULL;
+    }
+
+    SSL_CTX_set_session_cache_mode(ssl_ctx.get(), SSL_SESS_CACHE_CLIENT);
+    return ssl_ctx.release();
+}
+
+SSL_CTX* CreateServerSSLContext(const ServerSSLOptions& options,
+                                std::vector<std::string>* hostnames) {
+    //- We use raft_node_cert/pkey to create SSL Context
+    std::unique_ptr<SSL_CTX, FreeSSLCTX> ssl_ctx(
+        SSL_CTX_new(SSLv23_server_method()));
+    if (!ssl_ctx) {
+        LOG(ERROR) << "Fail to new SSL_CTX: " << SSLError(ERR_get_error());
+        return NULL;
+    }
+
+    if (LoadEncCertificate(ssl_ctx.get(), raft_node_cert,
+                        raft_node_pkey, hostnames) != 0) {
+        return NULL;
+    }
+
+    int protocols = TLSv1 | TLSv1_1 | TLSv1_2;
+    if (!options.disable_ssl3) {
+        protocols |= SSLv3;
+    }
+    if (SetSSLOptions(ssl_ctx.get(), options.ciphers,
+                      protocols, options.verify) != 0) {
+        return NULL;
+    }
+
+#ifdef SSL_MODE_RELEASE_BUFFERS
+    if (options.release_buffer) {
+        long sslmode = SSL_CTX_get_mode(ssl_ctx.get());
+        sslmode |= SSL_MODE_RELEASE_BUFFERS;
+        SSL_CTX_set_mode(ssl_ctx.get(), sslmode);
+    }
+#endif  // SSL_MODE_RELEASE_BUFFERS
+
+    SSL_CTX_set_timeout(ssl_ctx.get(), options.session_lifetime_s);
+    SSL_CTX_sess_set_cache_size(ssl_ctx.get(), options.session_cache_size);
+
+#ifndef OPENSSL_NO_DH
+    SSL_CTX_set_tmp_dh_callback(ssl_ctx.get(), SSLGetDHCallback);
+
+#if !defined(OPENSSL_NO_ECDH) && defined(SSL_CTX_set_tmp_ecdh)
+    EC_KEY* ecdh = NULL;
+    int i = OBJ_sn2nid(options.ecdhe_curve_name.c_str());
+    if (!i || ((ecdh = EC_KEY_new_by_curve_name(i)) == NULL)) {
+        LOG(ERROR) << "Fail to find ECDHE named curve="
+                   << options.ecdhe_curve_name
+                   << ": " << SSLError(ERR_get_error());
+        return NULL;
+    }
+    SSL_CTX_set_tmp_ecdh(ssl_ctx.get(), ecdh);
+    EC_KEY_free(ecdh);
+#endif
+
+#endif  // OPENSSL_NO_DH
+
+    return ssl_ctx.release();
+}
+
+#else
 
 static int SetSSLOptions(SSL_CTX* ctx, const std::string& ciphers,
                          int protocols, const VerifyOptions& verify) {
@@ -410,28 +576,7 @@ static int SetSSLOptions(SSL_CTX* ctx, const std::string& ciphers,
         return -1;
     }
 
-    // TODO: Verify the CNAME in certificate matches the requesting host
-    if (verify.verify_depth > 0) {
-        SSL_CTX_set_verify(ctx, (SSL_VERIFY_PEER
-                                 | SSL_VERIFY_FAIL_IF_NO_PEER_CERT), NULL);
-        SSL_CTX_set_verify_depth(ctx, verify.verify_depth);
-        std::string cafile = verify.ca_file_path;
-        if (cafile.empty()) {
-            cafile = X509_get_default_cert_area() + std::string("/cert.pem");
-        }
-        if (SSL_CTX_load_verify_locations(ctx, cafile.c_str(), NULL) == 0) {
-            if (verify.ca_file_path.empty()) {
-                LOG(WARNING) << "Fail to load default CA file " << cafile
-                             << ": " << SSLError(ERR_get_error());
-            } else {
-                LOG(ERROR) << "Fail to load CA file " << cafile
-                           << ": " << SSLError(ERR_get_error());
-                return -1;
-            }
-        }
-    } else {
-        SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
-    }
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
 
     SSL_CTX_set_info_callback(ctx, SSLInfoCallback);
 #if OPENSSL_VERSION_NUMBER >= 0x00907000L
@@ -439,40 +584,6 @@ static int SetSSLOptions(SSL_CTX* ctx, const std::string& ciphers,
     SSL_CTX_set_msg_callback(ctx, SSLMessageCallback);
 #endif
 
-    return 0;
-}
-
-static int ServerALPNCallback(
-        SSL* ssl, const unsigned char** out, unsigned char* outlen,
-        const unsigned char* in, unsigned int inlen, void* arg) {
-    const std::string* alpns = static_cast<const std::string*>(arg);
-    if (alpns == nullptr) {
-        return SSL_TLSEXT_ERR_NOACK;
-    }
-
-    // Use OpenSSL standard select API.
-    int select_result = SSL_select_next_proto(
-            const_cast<unsigned char**>(out), outlen, 
-            reinterpret_cast<const unsigned char*>(alpns->data()), alpns->size(),
-            in, inlen);
-    return (select_result == OPENSSL_NPN_NEGOTIATED) 
-                ? SSL_TLSEXT_ERR_OK : SSL_TLSEXT_ERR_NOACK;
-}
-
-static int SetServerALPNCallback(SSL_CTX* ssl_ctx, const std::string* alpns) {
-    if (ssl_ctx == nullptr) {
-        LOG(ERROR) << "Fail to set server ALPN callback, ssl_ctx is nullptr.";
-        return -1;
-    }
-
-    // Server set alpn callback when openssl version is more than 1.0.2
-#if (OPENSSL_VERSION_NUMBER >= SSL_VERSION_NUMBER(1, 0, 2))
-    SSL_CTX_set_alpn_select_cb(ssl_ctx, ServerALPNCallback,
-            const_cast<std::string*>(alpns));
-#else
-    LOG(WARNING) << "OpenSSL version=" << OPENSSL_VERSION_STR 
-            << " is lower than 1.0.2, ignore server alpn.";
-#endif
     return 0;
 }
 
@@ -498,14 +609,6 @@ SSL_CTX* CreateClientSSLContext(const ChannelSSLOptions& options) {
         return NULL;
     }
 
-    if (!options.alpn_protocols.empty()) {
-        std::vector<unsigned char> alpn_list;
-        if (!BuildALPNProtocolList(options.alpn_protocols, alpn_list)) {
-            return NULL;
-        }
-        SSL_CTX_set_alpn_protos(ssl_ctx.get(), alpn_list.data(), alpn_list.size());
-    }
-
     SSL_CTX_set_session_cache_mode(ssl_ctx.get(), SSL_SESS_CACHE_CLIENT);
     return ssl_ctx.release();
 }
@@ -513,7 +616,6 @@ SSL_CTX* CreateClientSSLContext(const ChannelSSLOptions& options) {
 SSL_CTX* CreateServerSSLContext(const std::string& certificate,
                                 const std::string& private_key,
                                 const ServerSSLOptions& options,
-                                const std::string* alpns,
                                 std::vector<std::string>* hostnames) {
     std::unique_ptr<SSL_CTX, FreeSSLCTX> ssl_ctx(
         SSL_CTX_new(SSLv23_server_method()));
@@ -565,14 +667,9 @@ SSL_CTX* CreateServerSSLContext(const std::string& certificate,
 
 #endif  // OPENSSL_NO_DH
 
-    // Set ALPN callback to choose application protocol when alpns is not empty.
-    if (alpns != nullptr && !alpns->empty()) {
-        if (SetServerALPNCallback(ssl_ctx.get(), alpns) != 0) {
-            return NULL; 
-        }
-    }
     return ssl_ctx.release();
 }
+#endif
 
 SSL* CreateSSLSession(SSL_CTX* ctx, SocketId id, int fd, bool server_mode) {
     if (ctx == NULL) {
@@ -600,18 +697,14 @@ SSL* CreateSSLSession(SSL_CTX* ctx, SocketId id, int fd, bool server_mode) {
 }
 
 void AddBIOBuffer(SSL* ssl, int fd, int bufsize) {
-#if defined(OPENSSL_IS_BORINGSSL)
-    BIO *rbio = BIO_new(BIO_s_mem());
-    BIO *wbio = BIO_new(BIO_s_mem());
-#else
-    BIO *rbio = BIO_new(BIO_f_buffer());
+    BIO* rbio = BIO_new(BIO_f_buffer());
     BIO_set_buffer_size(rbio, bufsize);
-    BIO *wbio = BIO_new(BIO_f_buffer());
-    BIO_set_buffer_size(wbio, bufsize);
-#endif
     BIO* rfd = BIO_new(BIO_s_fd());
     BIO_set_fd(rfd, fd, 0);
     rbio  = BIO_push(rbio, rfd);
+
+    BIO* wbio = BIO_new(BIO_f_buffer());
+    BIO_set_buffer_size(wbio, bufsize);
     BIO* wfd = BIO_new(BIO_s_fd());
     BIO_set_fd(wfd, fd, 0);
     wbio = BIO_push(wbio, wfd);
@@ -677,7 +770,7 @@ static unsigned long SSLGetThreadId() {
 // may crash probably due to some TLS data used inside OpenSSL
 // Also according to performance test, there is little difference
 // between pthread mutex and bthread mutex
-static butil::Mutex* g_ssl_mutexs = NULL;
+static sgxbutil::Mutex* g_ssl_mutexs = NULL;
 
 static void SSLLockCallback(int mode, int n, const char* file, int line) {
     (void)file;
@@ -696,7 +789,7 @@ static void SSLLockCallback(int mode, int n, const char* file, int line) {
 
 int SSLThreadInit() {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-    g_ssl_mutexs = new butil::Mutex[CRYPTO_num_locks()];
+    g_ssl_mutexs = new sgxbutil::Mutex[CRYPTO_num_locks()];
     CRYPTO_set_locking_callback(SSLLockCallback);
 # ifdef CRYPTO_LOCK_ECDH
     CRYPTO_THREADID_set_callback(SSLGetThreadId);
@@ -884,54 +977,7 @@ void Print(std::ostream& os, X509* cert, const char* sep) {
 
     char* bufp = NULL;
     int len = BIO_get_mem_data(buf, &bufp);
-    os << butil::StringPiece(bufp, len);
-}
-
-std::string ALPNProtocolToString(const AdaptiveProtocolType& protocol) {
-    butil::StringPiece name = protocol.name();
-    // Default use http 1.1 version
-    if (name.starts_with("http")) {
-        name.set("http/1.1");
-    }
-
-    // ALPN extension uses 1 byte to record the protocol length
-    // and it's maximum length is 255.
-    if (name.size() > CHAR_MAX) {
-        name = name.substr(0, CHAR_MAX); 
-    }
-
-    char length = static_cast<char>(name.size());
-    return std::string(&length, 1) + name.data(); 
-}
-
-bool BuildALPNProtocolList(
-    const std::vector<std::string>& alpn_protocols,
-    std::vector<unsigned char>& result
-) {
-    size_t alpn_list_length = 0;
-    for (const auto& alpn_protocol : alpn_protocols) {
-        if (alpn_protocol.size() > UCHAR_MAX) {
-            LOG(ERROR) << "Fail to build ALPN procotol list: "
-                       << "protocol name length " << alpn_protocol.size() << " too long, "
-                       << "max 255 supported.";
-            return false;
-        }
-        alpn_list_length += alpn_protocol.size() + 1;
-    }
-
-    result.resize(alpn_list_length);
-    for (size_t curr = 0, i = 0; i < alpn_protocols.size(); i++) {
-        result[curr++] = static_cast<unsigned char>(
-            alpn_protocols[i].size()
-        );
-        std::copy(
-            alpn_protocols[i].begin(),
-            alpn_protocols[i].end(),
-            result.begin() + curr
-        );
-        curr += alpn_protocols[i].size();
-    }
-    return true;
+    os << sgxbutil::StringPiece(bufp, len);
 }
 
 } // namespace brpc

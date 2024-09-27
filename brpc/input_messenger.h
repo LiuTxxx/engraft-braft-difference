@@ -19,16 +19,13 @@
 #ifndef BRPC_INPUT_MESSENGER_H
 #define BRPC_INPUT_MESSENGER_H
 
-#include "butil/iobuf.h"                    // butil::IOBuf
+#include "sgxbutil/iobuf.h"                    // sgxbutil::IOBuf
 #include "brpc/socket.h"              // SocketId, SocketUser
 #include "brpc/parse_result.h"        // ParseResult
 #include "brpc/input_message_base.h"  // InputMessageBase
 
 
 namespace brpc {
-namespace rdma {
-class RdmaEndpoint;
-}
 
 struct InputMessageHandler {
     // The callback to cut a message from `source'.
@@ -44,7 +41,7 @@ struct InputMessageHandler {
     //     from `source' before returning.
     //  MakeMessage(InputMessageBase*):
     //     The message is parsed successfully and cut from `source'.
-    typedef ParseResult (*Parse)(butil::IOBuf* source, Socket *socket,
+    typedef ParseResult (*Parse)(sgxbutil::IOBuf* source, Socket *socket,
                                  bool read_eof, const void *arg);
     Parse parse;
     
@@ -73,7 +70,6 @@ struct InputMessageHandler {
 // Process messages from connections.
 // `Message' corresponds to a client's request or a server's response.
 class InputMessenger : public SocketUser {
-friend class rdma::RdmaEndpoint;
 public:
     explicit InputMessenger(size_t capacity = 128);
     ~InputMessenger();
@@ -85,7 +81,7 @@ public:
     int AddHandler(const InputMessageHandler& handler);
 
     // [thread-safe] Create a socket to process input messages.
-    int Create(const butil::EndPoint& remote_side,
+    int Create(const sgxbutil::EndPoint& remote_side,
                time_t health_check_interval_s,
                SocketId* id);
     // Overwrite necessary fields in `base_options' and create a socket with
@@ -111,43 +107,19 @@ protected:
     static void OnNewMessages(Socket* m);
     
 private:
-    class InputMessageClosure {
-    public:
-        InputMessageClosure() : _msg(NULL) { }
-        ~InputMessageClosure() noexcept(false);
-
-        InputMessageBase* release() {
-            InputMessageBase* m = _msg;
-            _msg = NULL;
-            return m;
-        }
-
-        void reset(InputMessageBase* m);
-
-    private:
-        InputMessageBase* _msg;
-    };
-
     // Find a valid scissor from `handlers' to cut off `header' and `payload'
     // from m->read_buf, save index of the scissor into `index'.
     ParseResult CutInputMessage(Socket* m, size_t* index, bool read_eof);
-
-    // Process a new message just received in OnNewMessages
-    // Return value >= 0 means success
-    int ProcessNewMessage(
-            Socket* m, ssize_t bytes, bool read_eof,
-            const uint64_t received_us, const uint64_t base_realtime,
-            InputMessageClosure& last_msg);
 
     // User-supplied scissors and handlers.
     // the index of handler is exactly the same as the protocol
     InputMessageHandler* _handlers;
     // Max added protocol type
-    butil::atomic<int> _max_index;
+    sgxbutil::atomic<int> _max_index;
     bool _non_protocol;
     size_t _capacity;
 
-    butil::Mutex _add_handler_mutex;
+    sgxbutil::Mutex _add_handler_mutex;
 };
 
 // Get the global InputMessenger at client-side.

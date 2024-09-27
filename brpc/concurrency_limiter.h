@@ -22,7 +22,6 @@
 #include "brpc/destroyable.h"
 #include "brpc/extension.h"                       // Extension<T>
 #include "brpc/adaptive_max_concurrency.h"        // AdaptiveMaxConcurrency
-#include "brpc/controller.h"
 
 namespace brpc {
 
@@ -34,7 +33,7 @@ public:
     // false when the concurrency reaches the upper limit, otherwise it 
     // returns true. Normally, when OnRequested returns false, you should 
     // return an ELIMIT error directly.
-    virtual bool OnRequested(int current_concurrency, Controller* cntl) = 0;
+    virtual bool OnRequested(int current_concurrency) = 0;
 
     // Each request should call this method before responding.
     // `error_code' : Error code obtained from the controller, 0 means success.

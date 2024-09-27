@@ -24,10 +24,10 @@
 
 #include <vector>                                  // std::vector
 #include <stdint.h>                                // uint64_t
-#include <gflags/gflags_declare.h>                 // DECLARE_xxx
-#include "butil/endpoint.h"                         // butil::EndPoint
-#include "butil/iobuf.h"
-#include "butil/logging.h"
+#include "google/gflags/gflags_declare.h"              // DECLARE_xxx
+#include "sgxbutil/endpoint.h"                         // sgxbutil::EndPoint
+#include "sgxbutil/iobuf.h"
+#include "sgxbutil/logging.h"
 #include "brpc/options.pb.h"                  // ProtocolType
 #include "brpc/socket_id.h"                   // SocketId
 #include "brpc/parse_result.h"                // ParseResult
@@ -56,18 +56,6 @@ class InputMessageBase;
 DECLARE_uint64(max_body_size);
 DECLARE_bool(log_error_text);
 
-// Get the serialized byte size of the protobuf message, 
-// different versions of protobuf have different methods
-// use template to avoid include `google/protobuf/message.h`
-template<typename T>
-inline uint32_t GetProtobufByteSize(const T& message) {
-#if GOOGLE_PROTOBUF_VERSION >= 3010000
-    return message.ByteSizeLong();
-#else
-    return static_cast<uint32_t>(message.ByteSize());
-#endif
-}
-
 // 3 steps to add a new Protocol:
 // Step1: Add a new ProtocolType in src/brpc/options.proto
 //        as identifier of the Protocol.
@@ -89,7 +77,7 @@ struct Protocol {
     //     from `source' before returning.
     //  MakeMessage(InputMessageBase*):
     //     The message is parsed successfully and cut from `source'.
-    typedef ParseResult (*Parse)(butil::IOBuf* source, Socket *socket,
+    typedef ParseResult (*Parse)(sgxbutil::IOBuf* source, Socket *socket,
                                  bool read_eof, const void *arg);
     Parse parse;
 
@@ -99,7 +87,7 @@ struct Protocol {
     // `cntl' provides additional data needed by some protocol (say HTTP).
     // Call cntl->SetFailed() on error.
     typedef void (*SerializeRequest)(
-        butil::IOBuf* request_buf,
+        sgxbutil::IOBuf* request_buf,
         Controller* cntl,
         const google::protobuf::Message* request);
     SerializeRequest serialize_request;
@@ -110,12 +98,12 @@ struct Protocol {
     // Remember to pack authentication information when `auth' is not NULL.
     // Call cntl->SetFailed() on error.
     typedef void (*PackRequest)(
-        butil::IOBuf* iobuf_out,
+        sgxbutil::IOBuf* iobuf_out,
         SocketMessage** user_message_out,
         uint64_t correlation_id,
         const google::protobuf::MethodDescriptor* method,
         Controller* controller,
-        const butil::IOBuf& request_buf,
+        const sgxbutil::IOBuf& request_buf,
         const Authenticator* auth);
     PackRequest pack_request;
 
@@ -146,8 +134,8 @@ struct Protocol {
     Verify verify;
 
     // [Optional]
-    // Convert `server_addr_and_port'(a parameter to Channel) to butil::EndPoint.
-    typedef bool (*ParseServerAddress)(butil::EndPoint* out,
+    // Convert `server_addr_and_port'(a parameter to Channel) to sgxbutil::EndPoint.
+    typedef bool (*ParseServerAddress)(sgxbutil::EndPoint* out,
                                        const char* server_addr_and_port);
     ParseServerAddress parse_server_address;
 
@@ -196,7 +184,7 @@ void ListProtocols(std::vector<Protocol>* vec);
 void ListProtocols(std::vector<std::pair<ProtocolType, Protocol> >* vec);
 
 // The common serialize_request implementation used by many protocols.
-void SerializeRequestDefault(butil::IOBuf* buf,
+void SerializeRequestDefault(sgxbutil::IOBuf* buf,
                              Controller* cntl,
                              const google::protobuf::Message* request);
 
@@ -204,8 +192,7 @@ void SerializeRequestDefault(butil::IOBuf* buf,
 // consistent with -max_body_size
 bool ParsePbFromZeroCopyStream(google::protobuf::Message* msg,
                                google::protobuf::io::ZeroCopyInputStream* input);
-bool ParsePbFromIOBuf(google::protobuf::Message* msg, const butil::IOBuf& buf);
-bool ParsePbTextFromIOBuf(google::protobuf::Message* msg, const butil::IOBuf& buf);
+bool ParsePbFromIOBuf(google::protobuf::Message* msg, const sgxbutil::IOBuf& buf);
 bool ParsePbFromArray(google::protobuf::Message* msg, const void* data, size_t size);
 bool ParsePbFromString(google::protobuf::Message* msg, const std::string& str);
 

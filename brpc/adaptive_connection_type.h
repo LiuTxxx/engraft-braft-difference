@@ -22,7 +22,7 @@
 // To brpc developers: This is a header included by user, don't depend
 // on internal structures, use opaque pointers instead.
 
-#include "butil/strings/string_piece.h"
+#include "sgxbutil/strings/string_piece.h"
 #include "brpc/options.pb.h"
 
 namespace brpc {
@@ -30,9 +30,9 @@ namespace brpc {
 // Convert a case-insensitive string to corresponding ConnectionType
 // Possible options are: short, pooled, single
 // Returns: CONNECTION_TYPE_UNKNOWN on error.
-ConnectionType StringToConnectionType(const butil::StringPiece& type,
+ConnectionType StringToConnectionType(const sgxbutil::StringPiece& type,
                                       bool print_log_on_unknown);
-inline ConnectionType StringToConnectionType(const butil::StringPiece& type)
+inline ConnectionType StringToConnectionType(const sgxbutil::StringPiece& type)
 { return StringToConnectionType(type, true); }
 
 // Convert a ConnectionType to a c-style string.
@@ -49,7 +49,7 @@ public:
         _type = type;
         _error = false;
     }
-    void operator=(const butil::StringPiece& name);
+    void operator=(const sgxbutil::StringPiece& name);
 
     operator ConnectionType() const { return _type; }
     const char* name() const { return ConnectionTypeToString(_type); }

@@ -20,10 +20,10 @@
 #define BRPC_EXTENSION_H
 
 #include <string>
-#include "butil/scoped_lock.h"
-#include "butil/logging.h"
-#include "butil/containers/case_ignored_flat_map.h"
-#include "butil/memory/singleton_on_pthread_once.h"
+#include "sgxbutil/scoped_lock.h"
+#include "sgxbutil/logging.h"
+#include "sgxbutil/containers/case_ignored_flat_map.h"
+#include "sgxbutil/memory/singleton_on_pthread_once.h"
 
 namespace butil {
 template <typename T> class GetLeakySingleton;
@@ -48,11 +48,11 @@ public:
     void List(std::ostream& os, char separator);
 
 private:
-friend class butil::GetLeakySingleton<Extension<T> >;
+friend class sgxbutil::GetLeakySingleton<Extension<T> >;
     Extension();
     ~Extension();
-    butil::CaseIgnoredFlatMap<T*> _instance_map;
-    butil::Mutex _map_mutex;
+    sgxbutil::CaseIgnoredFlatMap<T*> _instance_map;
+    sgxbutil::Mutex _map_mutex;
 };
 
 } // namespace brpc

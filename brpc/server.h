@@ -23,45 +23,32 @@
 // on internal structures, use opaque pointers instead.
 
 #include "bthread/errno.h"        // Redefine errno
-#include "bthread/bthread.h"      // Server may need some bthread functions,
-                                  // e.g. bthread_usleep
-#include <google/protobuf/service.h>                 // google::protobuf::Service
-#include "butil/macros.h"                            // DISALLOW_COPY_AND_ASSIGN
-#include "butil/containers/doubly_buffered_data.h"   // DoublyBufferedData
-#include "bvar/bvar.h"
-#include "butil/containers/case_ignored_flat_map.h"  // [CaseIgnored]FlatMap
-#include "butil/ptr_container.h"
+#include "google/protobuf/service.h"                 // google::protobuf::Service
+#include "sgxbutil/macros.h"                            // DISALLOW_COPY_AND_ASSIGN
+#include "sgxbutil/containers/doubly_buffered_data.h"   // DoublyBufferedData
+// #include "bvar/bvar.h"
+#include "sgxbutil/containers/case_ignored_flat_map.h"  // [CaseIgnored]FlatMap
+#include "sgxbutil/ptr_container.h"
 #include "brpc/controller.h"                   // brpc::Controller
 #include "brpc/ssl_options.h"                  // ServerSSLOptions
 #include "brpc/describable.h"                  // User often needs this
-#include "brpc/data_factory.h"                 // DataFactory
 #include "brpc/builtin/tabbed.h"
 #include "brpc/details/profiler_linker.h"
-#include "brpc/health_reporter.h"
 #include "brpc/adaptive_max_concurrency.h"
 #include "brpc/http2.h"
-#include "brpc/redis.h"
-#include "brpc/interceptor.h"
-#include "brpc/concurrency_limiter.h"
-#include "brpc/baidu_master_service.h"
-#include "brpc/rpc_pb_message_factory.h"
+#include "bthread/bthread.h" 
 
 namespace brpc {
 
 class Acceptor;
 class MethodStatus;
-class NsheadService;
-class ThriftService;
 class SimpleDataPool;
-class MongoServiceAdaptor;
 class RestfulMap;
-class RtmpService;
-class RedisService;
 struct SocketSSLContext;
 
 struct ServerOptions {
     ServerOptions();  // Constructed with default options.
-
+        
     // connections without data transmission for so many seconds will be closed
     // Default: -1 (disabled)
     int idle_timeout_sec;
@@ -70,21 +57,6 @@ struct ServerOptions {
     // of the server will be created when the server is started.
     // Default: ""
     std::string pid_file;
-
-    // Process requests in format of nshead_t + blob.
-    // Owned by Server and deleted in server's destructor.
-    // Default: NULL
-    NsheadService* nshead_service;
-
-    // Process requests in format of thrift_binary_head_t + blob.
-    // Owned by Server and deleted in server's destructor.
-    // Default: NULL
-    ThriftService* thrift_service;
-
-    // Adaptor for Mongo protocol, check src/brpc/mongo_service_adaptor.h for details
-    // The adaptor will not be deleted by server
-    // and must remain valid when server is running.
-    const MongoServiceAdaptor* mongo_service_adaptor;
 
     // Turn on authentication for all services if `auth' is not NULL.
     // Default: NULL
@@ -95,18 +67,9 @@ struct ServerOptions {
     // Default: false
     bool server_owns_auth;
 
-    // Turn on request interception  if `interceptor' is not NULL.
-    // Default: NULL
-    const Interceptor* interceptor;
-
-    // false: `interceptor' is not owned by server and must be valid when server is running.
-    // true:  `interceptor' is owned by server and will be deleted when server is destructed.
-    // Default: false
-    bool server_owns_interceptor;
-
     // Number of pthreads that server runs on. Notice that this is just a hint,
     // you can't assume that the server uses exactly so many pthreads because
-    // pthread workers are shared by all servers and channels inside a
+    // pthread workers are shared by all servers and channels inside a 
     // process. And there're no "io-thread" and "worker-thread" anymore,
     // brpc automatically schedules "io" and "worker" code for better
     // parallelism and less context switches.
@@ -135,64 +98,6 @@ struct ServerOptions {
     // Overridable by Server.MaxConcurrencyOf().
     AdaptiveMaxConcurrency method_max_concurrency;
 
-    // -------------------------------------------------------
-    // Differences between session-local and thread-local data
-    // -------------------------------------------------------
-    // * session-local data has to be got from a server-side Controller.
-    //   thread-local data can be got in any function running inside a server
-    //   thread without an object.
-    // * session-local data is attached to current RPC and invalid after
-    //   calling `done'. thread-local data is attached to current server
-    //   thread and invalid after leaving Service::CallMethod(). If you need
-    //   to hand down data to an asynchronous `done' which is called outside
-    //   Service::CallMethod(), you must use session-local data.
-    // -----------------
-    // General guideline
-    // -----------------
-    // * Choose a proper value for reserved_xxx_local_data, small value may
-    //   not create enough data for all searching threads, while big value
-    //   wastes memory.
-    // * Comparing to reserving data, making them as small as possible and
-    //   creating them on demand is better. Passing a lot of stuff via
-    //   session-local data or thread-local data is definitely not a good design.
-
-    // The factory to create/destroy data attached to each RPC session.
-    // If this option is NULL, Controller::session_local_data() is always NULL.
-    // NOT owned by Server and must be valid when Server is running.
-    // Default: NULL
-    const DataFactory* session_local_data_factory;
-
-    // Prepare so many session-local data before server starts, so that calls
-    // to Controller::session_local_data() get data directly rather than
-    // calling session_local_data_factory->Create() at first time. Useful when
-    // Create() is slow, otherwise the RPC session may be blocked by the
-    // creation of data and not served within timeout.
-    // Default: 0
-    size_t reserved_session_local_data;
-
-    // The factory to create/destroy data attached to each searching thread
-    // in server.
-    // If this option is NULL, brpc::thread_local_data() is always NULL.
-    // NOT owned by Server and must be valid when Server is running.
-    // Default: NULL
-    const DataFactory* thread_local_data_factory;
-
-    // Prepare so many thread-local data before server starts, so that calls
-    // to brpc::thread_local_data() get data directly rather than calling
-    // thread_local_data_factory->Create() at first time. Useful when Create()
-    // is slow, otherwise the RPC session may be blocked by the creation
-    // of data and not served within timeout.
-    // Default: 0
-    size_t reserved_thread_local_data;
-
-    // Call bthread_init_fn(bthread_init_args) in at least #bthread_init_count
-    // bthreads before server runs, mainly for initializing bthread locals.
-    // You have to set both `bthread_init_fn' and `bthread_init_count' to
-    // enable the feature.
-    bool (*bthread_init_fn)(void* args); // default: NULL (do nothing)
-    void* bthread_init_args;             // default: NULL
-    size_t bthread_init_count;           // default: 0
-
     // Provide builtin services at this port rather than the port to Start().
     // When your server needs to be accessed from public (including traffic
     // redirected by nginx or other http front-end servers), set this port
@@ -217,25 +122,9 @@ struct ServerOptions {
 
     // SSL related options. Refer to `ServerSSLOptions' for details
     bool has_ssl_options() const { return _ssl_options != NULL; }
-    const ServerSSLOptions& ssl_options() const { return *_ssl_options; }
+    const ServerSSLOptions& ssl_options() const { return *_ssl_options.get(); }
     ServerSSLOptions* mutable_ssl_options();
-
-    // Force ssl for all connections of the port to Start().
-    bool force_ssl;
-
-    // Whether the server uses rdma or not
-    // Default: false
-    bool use_rdma;
-
-    // [CAUTION] This option is for implementing specialized baidu-std proxies,
-    // most users don't need it. Don't change this option unless you fully
-    // understand the description below.
-    // If this option is set, all baidu-std requests to the server will be delegated
-    // to this service.
-    //
-    // Owned by Server and deleted in server's destructor.
-    BaiduMasterService* baidu_master_service;
-
+    
     // [CAUTION] This option is for implementing specialized http proxies,
     // most users don't need it. Don't change this option unless you fully
     // understand the description below.
@@ -246,16 +135,7 @@ struct ServerOptions {
     // and response must have no fields.
     //
     // Owned by Server and deleted in server's destructor
-    ::google::protobuf::Service* http_master_service;
-
-    // If this field is on, contents on /health page is generated by calling
-    // health_reporter->GenerateReport(). This object is NOT owned by server
-    // and must remain valid when server is running.
-    HealthReporter* health_reporter;
-
-    // For processing RTMP connections. Read src/brpc/rtmp.h for details.
-    // Default: NULL (rtmp support disabled)
-    RtmpService* rtmp_service;
+    google::protobuf::Service* http_master_service;
 
     // Only enable these protocols, separated by spaces.
     // All names inside must be valid, check protocols name in global.cpp
@@ -265,32 +145,11 @@ struct ServerOptions {
     // Customize parameters of HTTP2, defined in http2.h
     H2Settings h2_settings;
 
-    // For processing Redis connections. Read src/brpc/redis.h for details.
-    // Owned by Server and deleted in server's destructor.
-    // Default: NULL (disabled)
-    RedisService* redis_service;
-
-    // Optional info name for composing server bvar prefix. Read ServerPrefix() method for details;
-    // Default: ""
-    std::string server_info_name;
-
-    // Server will run in this tagged bthread worker group
-    // Default: BTHREAD_TAG_DEFAULT
-    bthread_tag_t bthread_tag;
-
-    // [CAUTION] This option is for implementing specialized rpc protobuf
-    // message factory, most users don't need it. Don't change this option
-    // unless you fully understand the description below.
-    // If this option is set, all baidu-std rpc request message and response
-    // message will be created by this factory.
-    //
-    // Owned by Server and deleted in server's destructor.
-    RpcPBMessageFactory* rpc_pb_message_factory;
 
 private:
     // SSLOptions is large and not often used, allocate it on heap to
     // prevent ServerOptions from being bloated in most cases.
-    butil::PtrContainer<ServerSSLOptions> _ssl_options;
+    sgxbutil::PtrContainer<ServerSSLOptions> _ssl_options;
 };
 
 // This struct is originally designed to contain basic statistics of the
@@ -315,18 +174,13 @@ struct ServiceOptions {
     // stopping the server.
     // Default: SERVER_DOESNT_OWN_SERVICE
     ServiceOwnership ownership;
-
+    
     // If this option is non-empty, methods in the service will be exposed
     // on specified paths instead of default "/SERVICE/METHOD".
     // Mappings are in form of: "PATH1 => NAME1, PATH2 => NAME2 ..." where
     // PATHs are valid http paths, NAMEs are method names in the service.
     // Default: empty
     std::string restful_mappings;
-
-    // Work with restful_mappings, if this flag is false, reject methods accessed
-    // from default urls (SERVICE/METHOD).
-    // Default: false
-    bool allow_default_url;
 
     // [ Not recommended to change this option ]
     // If this flag is true, the service will convert http body to protobuf
@@ -339,18 +193,10 @@ struct ServiceOptions {
     // Default: true
     bool allow_http_body_to_pb;
 
-    // decode json string to protobuf bytes using base64 decoding when this
+    // decode json string to protobuf bytes using base64 decoding when this 
     // option is turned on.
     // Default: false if BAIDU_INTERNAL is defined, otherwise true
     bool pb_bytes_to_base64;
-
-    // decode json array to protobuf message which contains a single repeated field.
-    // Default: false.
-    bool pb_single_repeated_to_array;
-
-    // enable server end progressive reading, mainly for http server
-    // Default: false.
-    bool enable_progressive_read;
 };
 
 // Represent ports inside [min_port, max_port]
@@ -364,7 +210,7 @@ struct PortRange {
 };
 
 // Server dispatches requests from clients to registered services and
-// sends responses back to clients.
+// and sends responses back to clients.
 class Server {
 public:
     enum Status {
@@ -388,7 +234,7 @@ public:
 
         const std::string& service_name() const;
     };
-    typedef butil::FlatMap<std::string, ServiceProperty> ServiceMap;
+    typedef sgxbutil::FlatMap<std::string, ServiceProperty> ServiceMap;
 
     struct MethodProperty {
         bool is_builtin_service;
@@ -397,14 +243,11 @@ public:
         // will be used when the service is queried.
         struct OpaqueParams {
             bool is_tabbed;
-            bool allow_default_url;
             bool allow_http_body_to_pb;
             bool pb_bytes_to_base64;
-            bool pb_single_repeated_to_array;
-            bool enable_progressive_read;
             OpaqueParams();
         };
-        OpaqueParams params;
+        OpaqueParams params;        
         // NULL if service of the method was never added as restful.
         // "@path1 @path2 ..." if the method was mapped from paths.
         std::string* http_url;
@@ -415,16 +258,7 @@ public:
 
         MethodProperty();
     };
-    typedef butil::FlatMap<std::string, MethodProperty> MethodMap;
-
-    struct ThreadLocalOptions {
-        bthread_key_t tls_key;
-        const DataFactory* thread_local_data_factory;
-
-        ThreadLocalOptions()
-            : tls_key(INVALID_BTHREAD_KEY)
-            , thread_local_data_factory(NULL) {}
-    };
+    typedef sgxbutil::FlatMap<std::string, MethodProperty> MethodMap;
 
 public:
     Server(ProfilerLinker = ProfilerLinker());
@@ -437,16 +271,14 @@ public:
     // * A server can be started more than once if the server is completely
     //   stopped by Stop() and Join().
     // * port can be 0, which makes kernel to choose a port dynamically.
-
+    
     // Start on an address in form of "0.0.0.0:8000".
     int Start(const char* ip_port_str, const ServerOptions* opt);
-    int Start(const butil::EndPoint& ip_port, const ServerOptions* opt);
+    int Start(const sgxbutil::EndPoint& ip_port, const ServerOptions* opt);
     // Start on IP_ANY:port.
     int Start(int port, const ServerOptions* opt);
     // Start on `ip_str' + any useable port in `range'
     int Start(const char* ip_str, PortRange range, const ServerOptions *opt);
-    // Start on IP_ANY + first useable port in `range'
-    int Start(PortRange range, const ServerOptions* opt);
 
     // NOTE: Stop() is paired with Join() to stop a server without losing
     // requests. The point of separating them is that you can Stop() multiple
@@ -459,15 +291,15 @@ public:
     int Stop(int closewait_ms/*not used anymore*/);
 
     // Wait until requests in progress are done. If Stop() is not called,
-    // this function NEVER return. If Stop() is called, during the waiting,
-    // this server responds new requests with `ELOGOFF' error immediately
-    // without calling any service. When clients see the error, they should
+    // this function NEVER return. If Stop() is called, during the waiting, 
+    // this server responds new requests with `ELOGOFF' error immediately 
+    // without calling any service. When clients see the error, they should 
     // try other servers.
     int Join();
 
     // Sleep until Ctrl-C is pressed, then stop and join this server.
     // CAUTION: Don't call signal(SIGINT, ...) in your program!
-    // If signal(SIGINT, ..) is called AFTER calling this function, this
+    // If signal(SIGINT, ..) is called AFTER calling this function, this 
     // function may block indefinitely.
     void RunUntilAskedToQuit();
 
@@ -478,8 +310,7 @@ public:
                    ServiceOwnership ownership);
     int AddService(google::protobuf::Service* service,
                    ServiceOwnership ownership,
-                   const butil::StringPiece& restful_mappings,
-                   bool allow_default_url = false);
+                   const sgxbutil::StringPiece& restful_mappings);
     int AddService(google::protobuf::Service* service,
                    const ServiceOptions& options);
 
@@ -487,7 +318,7 @@ public:
     // NOTE: removing a service while server is running is forbidden.
     // Returns 0 on success, -1 otherwise.
     int RemoveService(google::protobuf::Service* service);
-
+    
     // Remove all services from this server.
     // NOTE: clearing services when server is running is forbidden.
     void ClearServices();
@@ -512,21 +343,21 @@ public:
     // Notice that for performance concerns, this function does not lock service
     // list internally thus races with AddService()/RemoveService().
     google::protobuf::Service*
-    FindServiceByFullName(const butil::StringPiece& full_name) const;
+    FindServiceByFullName(const sgxbutil::StringPiece& full_name) const;
 
     // Find a service by its ServiceDescriptor::name().
     // Returns the registered service pointer, NULL on not found.
     // Notice that for performance concerns, this function does not lock service
     // list internally thus races with AddService()/RemoveService().
     google::protobuf::Service*
-    FindServiceByName(const butil::StringPiece& name) const;
+    FindServiceByName(const sgxbutil::StringPiece& name) const;
 
     // Put all services registered by user into `services'
     void ListServices(std::vector<google::protobuf::Service*>* services);
 
     // Get statistics of this server
     void GetStat(ServerStatistics* stat) const;
-
+    
     // Get the options passed to Start().
     const ServerOptions& options() const { return _options; }
 
@@ -539,8 +370,8 @@ public:
     // Return the first service added to this server. If a service was once
     // returned by first_service() and then removed, first_service() will
     // always be NULL.
-    // This is useful for some production lines whose protocol does not
-    // contain a service name, in which case this service works as the
+    // This is useful for some production lines whose protocol does not 
+    // contain a service name, in which case this service works as the 
     // default service.
     google::protobuf::Service* first_service() const
     { return _first_service; }
@@ -550,15 +381,11 @@ public:
     const std::string& version() const { return _version; }
 
     // Return the address this server is listening
-    butil::EndPoint listen_address() const { return _listen_addr; }
-
+    sgxbutil::EndPoint listen_address() const { return _listen_addr; }
+    
     // Last time that Start() was successfully called. 0 if Start() was
     // never called
     time_t last_start_time() const { return _last_start_time; }
-
-    SimpleDataPool* session_local_data_pool() const { return _session_local_data_pool; }
-
-    const ThreadLocalOptions& thread_local_options() const { return _tl_options; }
 
     // Print the html code of tabs into `os'.
     // current_tab_name is the tab highlighted.
@@ -577,30 +404,18 @@ public:
     // an auto concurrency limiter, eg `options.max_concurrency = "auto"`.If you
     // still called non-const version of the interface, your changes to the
     // maximum concurrency will not take effect.
-    AdaptiveMaxConcurrency& MaxConcurrencyOf(const butil::StringPiece& full_method_name);
-    int MaxConcurrencyOf(const butil::StringPiece& full_method_name) const;
-
-    AdaptiveMaxConcurrency& MaxConcurrencyOf(const butil::StringPiece& full_service_name,
-                          const butil::StringPiece& method_name);
-    int MaxConcurrencyOf(const butil::StringPiece& full_service_name,
-                         const butil::StringPiece& method_name) const;
+    AdaptiveMaxConcurrency& MaxConcurrencyOf(const sgxbutil::StringPiece& full_method_name);
+    int MaxConcurrencyOf(const sgxbutil::StringPiece& full_method_name) const;
+    
+    AdaptiveMaxConcurrency& MaxConcurrencyOf(const sgxbutil::StringPiece& full_service_name,
+                          const sgxbutil::StringPiece& method_name);
+    int MaxConcurrencyOf(const sgxbutil::StringPiece& full_service_name,
+                         const sgxbutil::StringPiece& method_name) const;
 
     AdaptiveMaxConcurrency& MaxConcurrencyOf(google::protobuf::Service* service,
-                          const butil::StringPiece& method_name);
+                          const sgxbutil::StringPiece& method_name);
     int MaxConcurrencyOf(google::protobuf::Service* service,
-                         const butil::StringPiece& method_name) const;
-
-    int Concurrency() const {
-        return butil::subtle::NoBarrier_Load(&_concurrency);
-    };
-  
-    // Returns true if accept request, reject request otherwise.
-    bool AcceptRequest(Controller* cntl) const;
-
-    bool has_progressive_read_method() const {
-        return this->_has_progressive_read_method;
-    }
-
+                         const sgxbutil::StringPiece& method_name) const;
 private:
 friend class StatusService;
 friend class ProtobufsService;
@@ -625,12 +440,10 @@ friend class Controller;
     // ensured to be called only once
     int InitializeOnce();
 
-    int InitALPNOptions(const ServerSSLOptions* options);
-
     // Create acceptor with handlers of protocols.
     Acceptor* BuildAcceptor();
 
-    int StartInternal(const butil::EndPoint& endpoint,
+    int StartInternal(const sgxbutil::ip_t& ip,
                       const PortRange& port_range,
                       const ServerOptions *opt);
 
@@ -643,33 +456,32 @@ friend class Controller;
 
     // Number of builtin services.
     size_t builtin_service_count() const { return _builtin_service_count; }
-
-    static void* UpdateDerivedVars(void*);
+    
+    static void* UpdateDerivedVars(void*);   
 
     void GenerateVersionIfNeeded();
-    void PutPidFileIfNeeded();
 
     const MethodProperty*
-    FindMethodPropertyByFullName(const butil::StringPiece& fullname) const;
+    FindMethodPropertyByFullName(const sgxbutil::StringPiece& fullname) const;
 
     const MethodProperty*
-    FindMethodPropertyByFullName(const butil::StringPiece& full_service_name,
-                                 const butil::StringPiece& method_name) const;
+    FindMethodPropertyByFullName(const sgxbutil::StringPiece& full_service_name,
+                                 const sgxbutil::StringPiece& method_name) const;
 
     const MethodProperty*
-    FindMethodPropertyByNameAndIndex(const butil::StringPiece& service_name,
+    FindMethodPropertyByNameAndIndex(const sgxbutil::StringPiece& service_name,
                                      int method_index) const;
+    
+    const ServiceProperty*
+    FindServicePropertyByFullName(const sgxbutil::StringPiece& fullname) const;
 
     const ServiceProperty*
-    FindServicePropertyByFullName(const butil::StringPiece& fullname) const;
-
-    const ServiceProperty*
-    FindServicePropertyByName(const butil::StringPiece& name) const;
-
+    FindServicePropertyByName(const sgxbutil::StringPiece& name) const;
+    
     std::string ServerPrefix() const;
 
     // Mapping from hostname to corresponding SSL_CTX
-    typedef butil::CaseIgnoredFlatMap<std::shared_ptr<SocketSSLContext> > CertMap;
+    typedef sgxbutil::CaseIgnoredFlatMap<std::shared_ptr<SocketSSLContext> > CertMap;
     struct CertMaps {
         CertMap cert_map;
         CertMap wildcard_cert_map;
@@ -679,13 +491,13 @@ friend class Controller;
         std::shared_ptr<SocketSSLContext> ctx;
         std::vector<std::string> filters;
     };
-    // Mapping from [certificate + private-key] to SSLContext
-    typedef butil::FlatMap<std::string, SSLContext> SSLContextMap;
+    // Mapping from [certficate + private-key] to SSLContext
+    typedef sgxbutil::FlatMap<std::string, SSLContext> SSLContextMap;
 
     void FreeSSLContexts();
 
     static int SSLSwitchCTXByHostname(struct ssl_st* ssl,
-                                      int* al, void* se);
+                                      int* al, Server* server);
 
     static bool AddCertMapping(CertMaps& bg, const SSLContext& ssl_ctx);
     static bool RemoveCertMapping(CertMaps& bg, const SSLContext& ssl_ctx);
@@ -694,33 +506,9 @@ friend class Controller;
 
     AdaptiveMaxConcurrency& MaxConcurrencyOf(MethodProperty*);
     int MaxConcurrencyOf(const MethodProperty*) const;
-
-    static bool CreateConcurrencyLimiter(const AdaptiveMaxConcurrency& amc,
-                                         ConcurrencyLimiter** out);
-
-    template <typename T>
-    int SetServiceMaxConcurrency(T* service) {
-        if (NULL != service) {
-            const AdaptiveMaxConcurrency* amc = &service->_max_concurrency;
-            if (amc->type() == AdaptiveMaxConcurrency::UNLIMITED()) {
-                amc = &_options.method_max_concurrency;
-            }
-            ConcurrencyLimiter* cl = NULL;
-            if (!CreateConcurrencyLimiter(*amc, &cl)) {
-                LOG(ERROR) << "Fail to create ConcurrencyLimiter for method";
-                return -1;
-            }
-            service->_status->SetConcurrencyLimiter(cl);
-        }
-        return 0;
-    }
-
+    
     DISALLOW_COPY_AND_ASSIGN(Server);
-
-    // Put frequently-accessed data pool at first.
-    SimpleDataPool* _session_local_data_pool;
-    ThreadLocalOptions _tl_options;
-
+    
     Status _status;
     int _builtin_service_count;
     // number of the virtual services for mapping URL to methods.
@@ -728,13 +516,13 @@ friend class Controller;
     bool _failed_to_set_max_concurrency_of_method;
     Acceptor* _am;
     Acceptor* _internal_am;
-
+    
     // Use method->full_name() as key
     MethodMap _method_map;
 
     // Use service->full_name() as key
     ServiceMap _fullname_service_map;
-
+    
     // In order to be compatible with some RPC framework that
     // uses service->name() to designate an RPC service
     ServiceMap _service_map;
@@ -750,49 +538,35 @@ friend class Controller;
     //   abc*  => Method
     RestfulMap* _global_restful_map;
 
-    // Default certificate which can't be reloaded
+    // Default certficate which can't be reloaded
     std::shared_ptr<SocketSSLContext> _default_ssl_ctx;
 
     // Reloadable SSL mappings
-    butil::DoublyBufferedData<CertMaps> _reload_cert_maps;
+    sgxbutil::DoublyBufferedData<CertMaps> _reload_cert_maps;
 
     // Holds the memory of all SSL_CTXs
     SSLContextMap _ssl_ctx_map;
-
+    
     ServerOptions _options;
-    butil::EndPoint _listen_addr;
-
-    // ALPN extention protocol-list format. Server initialize this with alpns options.
-    // OpenSSL API use this variable to avoid conversion at each handshake.
-    std::string _raw_alpns;
+    sgxbutil::EndPoint _listen_addr;
 
     std::string _version;
     time_t _last_start_time;
     bthread_t _derivative_thread;
-
-    bthread_keytable_pool_t* _keytable_pool;
-
+    
     // mutable is required for `ServerPrivateAccessor' to change this bvar
-    mutable bvar::Adder<int64_t> _nerror_bvar;
-    mutable bvar::PerSecond<bvar::Adder<int64_t> > _eps_bvar;
-    BAIDU_CACHELINE_ALIGNMENT mutable int32_t _concurrency;
-    bvar::PassiveStatus<int32_t> _concurrency_bvar;
+    // mutable bvar::Adder<int64_t> _nerror_bvar;
+    mutable int32_t BAIDU_CACHELINE_ALIGNMENT _concurrency;
 
-    bool _has_progressive_read_method;
 };
 
-// Get the data attached to current searching thread. The data is created by
-// ServerOptions.thread_local_data_factory and reused between different threads.
-// If ServerOptions.thread_local_data_factory is NULL, return NULL.
-// If this function is not called inside a server thread, return NULL.
-void* thread_local_data();
 
 // Test if a dummy server was already started.
 bool IsDummyServerRunning();
 
 // Start a dummy server listening at `port'. If a dummy server was already
 // running, this function does nothing and fails.
-// NOTE: The second parameter(ProfilerLinker) is for linking of profiling
+// NOTE: The second parameter(ProfilerLinker) is for linking of profiling 
 // functions when corresponding macros are defined, just ignore it.
 // Returns 0 on success, -1 otherwise.
 int StartDummyServerAt(int port, ProfilerLinker = ProfilerLinker());

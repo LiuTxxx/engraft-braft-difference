@@ -21,7 +21,7 @@
 // To brpc developers: This is a header included by user, don't depend
 // on internal structures, use opaque pointers instead.
 
-#include "butil/strings/string_piece.h"
+#include "sgxbutil/strings/string_piece.h"
 #include "brpc/options.pb.h"
 
 namespace brpc {
@@ -31,9 +31,9 @@ namespace brpc {
 // Convert a case-insensitive string to corresponding ProtocolType which is
 // defined in src/brpc/options.proto
 // Returns: PROTOCOL_UNKNOWN on error.
-ProtocolType StringToProtocolType(const butil::StringPiece& type,
+ProtocolType StringToProtocolType(const sgxbutil::StringPiece& type,
                                   bool print_log_on_unknown);
-inline ProtocolType StringToProtocolType(const butil::StringPiece& type)
+inline ProtocolType StringToProtocolType(const sgxbutil::StringPiece& type)
 { return StringToProtocolType(type, true); }
 
 // Convert a ProtocolType to a c-style string.
@@ -44,7 +44,6 @@ class AdaptiveProtocolType {
 public:
     explicit AdaptiveProtocolType() : _type(PROTOCOL_UNKNOWN) {}
     explicit AdaptiveProtocolType(ProtocolType type) : _type(type) {}
-    explicit AdaptiveProtocolType(butil::StringPiece name) { *this = name; }
     ~AdaptiveProtocolType() {}
 
     void operator=(ProtocolType type) {
@@ -53,10 +52,10 @@ public:
         _param.clear();
     }
 
-    void operator=(butil::StringPiece name) {
-        butil::StringPiece param;
+    void operator=(sgxbutil::StringPiece name) {
+        sgxbutil::StringPiece param;
         const size_t pos = name.find(':');
-        if (pos != butil::StringPiece::npos) {
+        if (pos != sgxbutil::StringPiece::npos) {
             param = name.substr(pos + 1);
             name.remove_suffix(name.size() - pos);
         }

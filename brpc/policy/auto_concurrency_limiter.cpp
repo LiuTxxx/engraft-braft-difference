@@ -16,15 +16,12 @@
 // under the License.
 
 #include <cmath>
-#include <gflags/gflags.h>
+#include "google/gflags/gflags.h"
 #include "brpc/errno.pb.h"
 #include "brpc/policy/auto_concurrency_limiter.h"
+#include "sgxbutil/fast_rand.h"
+#include "sgxbutil/time.h"
 
-namespace bthread {
-
-DECLARE_int32(bthread_concurrency);
-
-}  // namespace bthread
 
 namespace brpc {
 namespace policy {
@@ -80,7 +77,7 @@ DEFINE_int32(auto_cl_latency_fluctuation_correction_factor, 1,
 
 AutoConcurrencyLimiter::AutoConcurrencyLimiter()
     : _max_concurrency(FLAGS_auto_cl_initial_max_concurrency)
-    , _remeasure_start_us(NextResetTime(butil::gettimeofday_us()))
+    , _remeasure_start_us(NextResetTime(sgxbutil::gettimeofday_us()))
     , _reset_latency_us(0)
     , _min_latency_us(-1)
     , _ema_max_qps(-1)
@@ -93,38 +90,38 @@ AutoConcurrencyLimiter* AutoConcurrencyLimiter::New(const AdaptiveMaxConcurrency
     return new (std::nothrow) AutoConcurrencyLimiter;
 }
 
-bool AutoConcurrencyLimiter::OnRequested(int current_concurrency, Controller*) {
+bool AutoConcurrencyLimiter::OnRequested(int current_concurrency) {
     return current_concurrency <= _max_concurrency;
 }
 
 void AutoConcurrencyLimiter::OnResponded(int error_code, int64_t latency_us) {
     if (0 == error_code) {
-        _total_succ_req.fetch_add(1, butil::memory_order_relaxed);
+        _total_succ_req.fetch_add(1, sgxbutil::memory_order_relaxed);
     } else if (ELIMIT == error_code) {
         return;
     }
 
-    const int64_t now_time_us = butil::gettimeofday_us();
+    const int64_t now_time_us = sgxbutil::gettimeofday_us();
     int64_t last_sampling_time_us = 
-        _last_sampling_time_us.load(butil::memory_order_relaxed);
+        _last_sampling_time_us.load(sgxbutil::memory_order_relaxed);
 
     if (last_sampling_time_us == 0 || 
         now_time_us - last_sampling_time_us >= 
             FLAGS_auto_cl_sampling_interval_ms * 1000) {
         bool sample_this_call = _last_sampling_time_us.compare_exchange_strong(
-            last_sampling_time_us, now_time_us, butil::memory_order_relaxed);
+            last_sampling_time_us, now_time_us, sgxbutil::memory_order_relaxed);
         if (sample_this_call) {
             bool sample_window_submitted = AddSample(error_code, latency_us, 
                                                      now_time_us);
             if (sample_window_submitted) {
                 // The following log prints has data-race in extreme cases, 
                 // unless you are in debug, you should not open it.
-                VLOG(1)
-                    << "Sample window submitted, current max_concurrency:"
-                    << _max_concurrency 
-                    << ", min_latency_us:" << _min_latency_us
-                    << ", ema_max_qps:" << _ema_max_qps
-                    << ", explore_ratio:" << _explore_ratio;
+                // VLOG(1)
+                //     << "Sample window submitted, current max_concurrency:"
+                //     << _max_concurrency 
+                //     << ", min_latency_us:" << _min_latency_us
+                //     << ", ema_max_qps:" << _ema_max_qps
+                //     << ", explore_ratio:" << _explore_ratio;
             }
         }
     }
@@ -137,14 +134,14 @@ int AutoConcurrencyLimiter::MaxConcurrency() {
 int64_t AutoConcurrencyLimiter::NextResetTime(int64_t sampling_time_us) {
     int64_t reset_start_us = sampling_time_us + 
         (FLAGS_auto_cl_noload_latency_remeasure_interval_ms / 2 + 
-        butil::fast_rand_less_than(FLAGS_auto_cl_noload_latency_remeasure_interval_ms / 2)) * 1000;
+        sgxbutil::fast_rand_less_than(FLAGS_auto_cl_noload_latency_remeasure_interval_ms / 2)) * 1000;
     return reset_start_us;
 }
 
 bool AutoConcurrencyLimiter::AddSample(int error_code, 
                                        int64_t latency_us, 
                                        int64_t sampling_time_us) {
-    std::unique_lock<butil::Mutex> lock_guard(_sw_mutex);
+    std::unique_lock<sgxbutil::Mutex> lock_guard(_sw_mutex);
     if (_reset_latency_us != 0) {
         // min_latency is about to be reset soon.
         if (_reset_latency_us > sampling_time_us) {
@@ -189,14 +186,14 @@ bool AutoConcurrencyLimiter::AddSample(int error_code,
         UpdateMaxConcurrency(sampling_time_us);
     } else {
         // All request failed
-        AdjustMaxConcurrency(_max_concurrency / 2);
+        _max_concurrency /= 2;
     }
     ResetSampleWindow(sampling_time_us);
     return true;
 }
 
 void AutoConcurrencyLimiter::ResetSampleWindow(int64_t sampling_time_us) {
-    _total_succ_req.exchange(0, butil::memory_order_relaxed);
+    _total_succ_req.exchange(0, sgxbutil::memory_order_relaxed);
     _sw.start_time_us = sampling_time_us;
     _sw.succ_count = 0;
     _sw.failed_count = 0;
@@ -222,15 +219,8 @@ void AutoConcurrencyLimiter::UpdateQps(double qps) {
     }
 }
 
-void AutoConcurrencyLimiter::AdjustMaxConcurrency(int next_max_concurrency) {
-    next_max_concurrency = std::max(bthread::FLAGS_bthread_concurrency, next_max_concurrency);
-    if (next_max_concurrency != _max_concurrency) {
-        _max_concurrency = next_max_concurrency;
-    }
-}
-
 void AutoConcurrencyLimiter::UpdateMaxConcurrency(int64_t sampling_time_us) {
-    int32_t total_succ_req = _total_succ_req.load(butil::memory_order_relaxed);
+    int32_t total_succ_req = _total_succ_req.load(sgxbutil::memory_order_relaxed);
     double failed_punish = _sw.total_failed_us * FLAGS_auto_cl_fail_punish_ratio;
     int64_t avg_latency = 
         std::ceil((failed_punish + _sw.total_succ_us) / _sw.succ_count);
@@ -260,7 +250,9 @@ void AutoConcurrencyLimiter::UpdateMaxConcurrency(int64_t sampling_time_us) {
             _min_latency_us * _ema_max_qps / 1000000 *  (1 + _explore_ratio);
     }
 
-    AdjustMaxConcurrency(next_max_concurrency);
+    if (next_max_concurrency != _max_concurrency) {
+        _max_concurrency = next_max_concurrency;
+    }
 }
 
 }  // namespace policy

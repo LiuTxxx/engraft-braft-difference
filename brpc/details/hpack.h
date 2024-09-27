@@ -19,10 +19,11 @@
 #ifndef  BRPC_HPACK_H
 #define  BRPC_HPACK_H
 
-#include "butil/iobuf.h"                             // butil::IOBuf
-#include "butil/strings/string_piece.h"              // butil::StringPiece
+#include "sgxbutil/iobuf.h"                             // sgxbutil::IOBuf
+#include "sgxbutil/strings/string_piece.h"              // sgxbutil::StringPiece
 #include "brpc/http2.h"
 #include "brpc/describable.h"
+#include "sgxbutil/logging.h"
 
 namespace brpc {
 
@@ -103,9 +104,9 @@ public:
 
     // Encode header and append the encoded buffer to |out|
     // Returns true on success.
-    void Encode(butil::IOBufAppender* out, const Header& header,
+    void Encode(sgxbutil::IOBufAppender* out, const Header& header,
                 const HPackOptions& options);
-    void Encode(butil::IOBufAppender* out, const Header& header)
+    void Encode(sgxbutil::IOBufAppender* out, const Header& header)
     { return Encode(out, header, HPackOptions()); }
 
     // Try to decode at most one Header from source and erase corresponding
@@ -114,11 +115,11 @@ public:
     //  * $size of decoded buffer when a header is succesfully decoded
     //  * 0 when the source is incompleted
     //  * -1 when the source is malformed
-    ssize_t Decode(butil::IOBuf* source, Header* h);
+    ssize_t Decode(sgxbutil::IOBuf* source, Header* h);
 
     // Like the previous function, except that the source is from
     // IOBufBytesIterator.
-    ssize_t Decode(butil::IOBufBytesIterator& source, Header* h);
+    ssize_t Decode(sgxbutil::IOBufBytesIterator& source, Header* h);
 
     void Describe(std::ostream& os, const DescribeOptions&) const;
     
@@ -128,7 +129,7 @@ private:
     int FindNameFromIndexTable(const std::string& name) const;
     const Header* HeaderAt(int index) const;
     ssize_t DecodeWithKnownPrefix(
-            butil::IOBufBytesIterator& iter, Header* h, uint8_t prefix_size) const;
+            sgxbutil::IOBufBytesIterator& iter, Header* h, uint8_t prefix_size) const;
 
     IndexTable* _encode_table;
     IndexTable* _decode_table;
@@ -137,8 +138,8 @@ private:
 // Lowercase the input string, a fast implementation.
 void tolower(std::string* s);
 
-inline ssize_t HPacker::Decode(butil::IOBuf* source, Header* h) {
-    butil::IOBufBytesIterator iter(*source);
+inline ssize_t HPacker::Decode(sgxbutil::IOBuf* source, Header* h) {
+    sgxbutil::IOBufBytesIterator iter(*source);
     const ssize_t nc = Decode(iter, h);
     if (nc > 0) {
         source->pop_front(nc);

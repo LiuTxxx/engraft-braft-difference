@@ -24,7 +24,7 @@ ConstantConcurrencyLimiter::ConstantConcurrencyLimiter(int max_concurrency)
     : _max_concurrency(max_concurrency) {
 }
 
-bool ConstantConcurrencyLimiter::OnRequested(int current_concurrency, Controller*) {
+bool ConstantConcurrencyLimiter::OnRequested(int current_concurrency) {
     return current_concurrency <= _max_concurrency;
 }
 
@@ -32,7 +32,7 @@ void ConstantConcurrencyLimiter::OnResponded(int error_code, int64_t latency) {
 }
 
 int ConstantConcurrencyLimiter::MaxConcurrency() {
-    return _max_concurrency.load(butil::memory_order_relaxed);
+    return _max_concurrency.load(sgxbutil::memory_order_relaxed);
 }
 
 ConstantConcurrencyLimiter*

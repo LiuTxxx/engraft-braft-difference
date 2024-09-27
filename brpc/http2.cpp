@@ -16,7 +16,7 @@
 // under the License.
 
 #include <limits>
-#include "butil/logging.h"
+#include "sgxbutil/logging.h"
 #include "brpc/details/hpack.h"
 #include "brpc/errno.pb.h"
 #include "brpc/http2.h"

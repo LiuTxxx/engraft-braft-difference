@@ -18,27 +18,18 @@
 
 // Since kDefaultTotalBytesLimit is private, we need some hacks to get the limit.
 // Works for pb 2.4, 2.6, 3.0
-#include "google/protobuf/stubs/common.h"
-#if GOOGLE_PROTOBUF_VERSION < 4022000
 #define private public
-#include <google/protobuf/io/coded_stream.h>
+#include "google/protobuf/io/coded_stream.h"
 const int PB_TOTAL_BYETS_LIMITS_RAW =
     google::protobuf::io::CodedInputStream::kDefaultTotalBytesLimit;
 const uint64_t PB_TOTAL_BYETS_LIMITS =
     PB_TOTAL_BYETS_LIMITS_RAW < 0 ? (uint64_t)-1LL : PB_TOTAL_BYETS_LIMITS_RAW;
 #undef private
-#else
-#include <google/protobuf/io/coded_stream.h>
-const int PB_TOTAL_BYETS_LIMITS_RAW = INT_MAX;
-const uint64_t PB_TOTAL_BYETS_LIMITS =
-    PB_TOTAL_BYETS_LIMITS_RAW < 0 ? (uint64_t)-1LL : PB_TOTAL_BYETS_LIMITS_RAW;
-#endif
 
-#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
-#include <google/protobuf/text_format.h>
-#include <gflags/gflags.h>
-#include "butil/logging.h"
-#include "butil/memory/singleton_on_pthread_once.h"
+#include "google/protobuf/io/zero_copy_stream_impl_lite.h"
+#include "google/gflags/gflags.h"
+#include "sgxbutil/logging.h"
+#include "sgxbutil/memory/singleton_on_pthread_once.h"
 #include "brpc/protocol.h"
 #include "brpc/controller.h"
 #include "brpc/compress.h"
@@ -61,7 +52,7 @@ BRPC_VALIDATE_GFLAG(log_error_text, PassValidate);
 // protocols outside brpc.
 const size_t MAX_PROTOCOL_SIZE = 128;
 struct ProtocolEntry {
-    butil::atomic<bool> valid;
+    sgxbutil::atomic<bool> valid;
     Protocol protocol;
     
     ProtocolEntry() : valid(false) {}
@@ -70,7 +61,7 @@ struct ProtocolMap {
     ProtocolEntry entries[MAX_PROTOCOL_SIZE];
 };
 inline ProtocolEntry* get_protocol_map() {
-    return butil::get_leaky_singleton<ProtocolMap>()->entries;
+    return sgxbutil::get_leaky_singleton<ProtocolMap>()->entries;
 }
 static pthread_mutex_t s_protocol_map_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -87,12 +78,12 @@ int RegisterProtocol(ProtocolType type, const Protocol& protocol) {
     }
     ProtocolEntry* const protocol_map = get_protocol_map();
     BAIDU_SCOPED_LOCK(s_protocol_map_mutex);
-    if (protocol_map[index].valid.load(butil::memory_order_relaxed)) {
+    if (protocol_map[index].valid.load(sgxbutil::memory_order_relaxed)) {
         LOG(ERROR) << "ProtocolType=" << type << " was registered";
         return -1;
     }
     protocol_map[index].protocol = protocol;
-    protocol_map[index].valid.store(true, butil::memory_order_release);
+    protocol_map[index].valid.store(true, sgxbutil::memory_order_release);
     return 0;
 }
 
@@ -104,7 +95,7 @@ const Protocol* FindProtocol(ProtocolType type) {
         return NULL;
     }
     ProtocolEntry* const protocol_map = get_protocol_map();
-    if (protocol_map[index].valid.load(butil::memory_order_acquire)) {
+    if (protocol_map[index].valid.load(sgxbutil::memory_order_acquire)) {
         return &protocol_map[index].protocol;
     }
     return NULL;
@@ -114,7 +105,7 @@ void ListProtocols(std::vector<Protocol>* vec) {
     vec->clear();
     ProtocolEntry* const protocol_map = get_protocol_map();
     for (size_t i = 0; i < MAX_PROTOCOL_SIZE; ++i) {
-        if (protocol_map[i].valid.load(butil::memory_order_acquire)) {
+        if (protocol_map[i].valid.load(sgxbutil::memory_order_acquire)) {
             vec->push_back(protocol_map[i].protocol);
         }
     }
@@ -124,15 +115,16 @@ void ListProtocols(std::vector<std::pair<ProtocolType, Protocol> >* vec) {
     vec->clear();
     ProtocolEntry* const protocol_map = get_protocol_map();
     for (size_t i = 0; i < MAX_PROTOCOL_SIZE; ++i) {
-        if (protocol_map[i].valid.load(butil::memory_order_acquire)) {
-            vec->emplace_back((ProtocolType)i, protocol_map[i].protocol);
+        if (protocol_map[i].valid.load(sgxbutil::memory_order_acquire)) {
+            vec->push_back(std::make_pair((ProtocolType)i, protocol_map[i].protocol));
         }
     }
 }
 
-void SerializeRequestDefault(butil::IOBuf* buf,
+void SerializeRequestDefault(sgxbutil::IOBuf* buf,
                              Controller* cntl,
                              const google::protobuf::Message* request) {
+    LOG(INFO) << __FUNCTION__ << " pthread-" << pthread_self();                                 
     // Check sanity of request.
     if (!request) {
         return cntl->SetFailed(EREQUEST, "`request' is NULL");
@@ -148,7 +140,7 @@ void SerializeRequestDefault(butil::IOBuf* buf,
     }
     if (!SerializeAsCompressedData(*request, buf, cntl->request_compress_type())) {
         return cntl->SetFailed(
-            EREQUEST, "Fail to compress request, compress_type=%d",
+            EREQUEST, "Fail to compress request, compress_tpye=%d",
             (int)cntl->request_compress_type());
     }
 }
@@ -156,21 +148,21 @@ void SerializeRequestDefault(butil::IOBuf* buf,
 // ======================================================
 
 inline bool CompareStringPieceWithoutCase(
-        const butil::StringPiece& s1, const char* s2) {
+        const sgxbutil::StringPiece& s1, const char* s2) {
     if (strlen(s2) != s1.size()) {
         return false;
     }
     return strncasecmp(s1.data(), s2, s1.size()) == 0;
 }
 
-ProtocolType StringToProtocolType(const butil::StringPiece& name,
+ProtocolType StringToProtocolType(const sgxbutil::StringPiece& name,
                                   bool print_log_on_unknown) {
     // Force init of s_protocol_name.
     GlobalInitializeOrDie();
 
     ProtocolEntry* const protocol_map = get_protocol_map();
     for (size_t i = 0; i < MAX_PROTOCOL_SIZE; ++i) {
-        if (protocol_map[i].valid.load(butil::memory_order_acquire) &&
+        if (protocol_map[i].valid.load(sgxbutil::memory_order_acquire) &&
             CompareStringPieceWithoutCase(name, protocol_map[i].protocol.name)) {
             return static_cast<ProtocolType>(i);
         }
@@ -184,7 +176,7 @@ ProtocolType StringToProtocolType(const butil::StringPiece& name,
         std::ostringstream err;
         err << "Unknown protocol `" << name << "', supported protocols:";
         for (size_t i = 0; i < MAX_PROTOCOL_SIZE; ++i) {
-            if (protocol_map[i].valid.load(butil::memory_order_acquire)) {
+            if (protocol_map[i].valid.load(sgxbutil::memory_order_acquire)) {
                 err << ' ' << protocol_map[i].protocol.name;
             }
         }
@@ -212,19 +204,9 @@ BUTIL_FORCE_INLINE bool ParsePbFromZeroCopyStreamInlined(
     // According to source code of pb, SetTotalBytesLimit is not a simple set,
     // avoid calling the function when the limit is definitely unreached.
     if (PB_TOTAL_BYETS_LIMITS < FLAGS_max_body_size) {
-#if GOOGLE_PROTOBUF_VERSION >= 3006000
-        decoder.SetTotalBytesLimit(INT_MAX);
-#else
         decoder.SetTotalBytesLimit(INT_MAX, -1);
-#endif
     }
     return msg->ParseFromCodedStream(&decoder) && decoder.ConsumedEntireMessage();
-}
-
-BUTIL_FORCE_INLINE bool ParsePbTextFromZeroCopyStreamInlined(
-    google::protobuf::Message* msg,
-    google::protobuf::io::ZeroCopyInputStream* input) {
-    return google::protobuf::TextFormat::Parse(input, msg);
 }
 
 bool ParsePbFromZeroCopyStream(
@@ -233,13 +215,8 @@ bool ParsePbFromZeroCopyStream(
     return ParsePbFromZeroCopyStreamInlined(msg, input);
 }
 
-bool ParsePbTextFromIOBuf(google::protobuf::Message* msg, const butil::IOBuf& buf) {
-    butil::IOBufAsZeroCopyInputStream stream(buf);
-    return ParsePbTextFromZeroCopyStreamInlined(msg, &stream);
-}
-
-bool ParsePbFromIOBuf(google::protobuf::Message* msg, const butil::IOBuf& buf) {
-    butil::IOBufAsZeroCopyInputStream stream(buf);
+bool ParsePbFromIOBuf(google::protobuf::Message* msg, const sgxbutil::IOBuf& buf) {
+    sgxbutil::IOBufAsZeroCopyInputStream stream(buf);
     return ParsePbFromZeroCopyStreamInlined(msg, &stream);
 }
 

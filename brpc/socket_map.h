@@ -20,8 +20,8 @@
 #define BRPC_SOCKET_MAP_H
 
 #include <vector>                             // std::vector
-#include "bvar/bvar.h"                        // bvar::PassiveStatus
-#include "butil/containers/flat_map.h"        // FlatMap
+// #include "bvar/bvar.h"                        // bvar::PassiveStatus
+#include "sgxbutil/containers/flat_map.h"        // FlatMap
 #include "brpc/socket_id.h"                   // SockdetId
 #include "brpc/options.pb.h"                  // ProtocolType
 #include "brpc/input_messenger.h"             // InputMessageHandler
@@ -47,10 +47,10 @@ inline bool operator!=(const ChannelSignature& s1, const ChannelSignature& s2) {
 // The following fields uniquely define a Socket. In other word,
 // Socket can't be shared between 2 different SocketMapKeys
 struct SocketMapKey {
-    explicit SocketMapKey(const butil::EndPoint& pt)
+    explicit SocketMapKey(const sgxbutil::EndPoint& pt)
         : peer(pt)
     {}
-    SocketMapKey(const butil::EndPoint& pt, const ChannelSignature& cs)
+    SocketMapKey(const sgxbutil::EndPoint& pt, const ChannelSignature& cs)
         : peer(pt), channel_signature(cs)
     {}
     SocketMapKey(const ServerNode& sn, const ChannelSignature& cs)
@@ -67,8 +67,8 @@ inline bool operator==(const SocketMapKey& k1, const SocketMapKey& k2) {
 
 struct SocketMapKeyHasher {
     size_t operator()(const SocketMapKey& key) const {
-        size_t h = butil::DefaultHasher<butil::EndPoint>()(key.peer.addr);
-        h = h * 101 + butil::DefaultHasher<std::string>()(key.peer.tag);
+        size_t h = sgxbutil::DefaultHasher<sgxbutil::EndPoint>()(key.peer.addr);
+        h = h * 101 + sgxbutil::DefaultHasher<std::string>()(key.peer.tag);
         h = h * 101 + key.channel_signature.data[1];
         return h;
     }
@@ -80,17 +80,11 @@ struct SocketMapKeyHasher {
 // successfully, SocketMapRemove() MUST be called when the Socket is not needed.
 // Return 0 on success, -1 otherwise.
 int SocketMapInsert(const SocketMapKey& key, SocketId* id,
-                    const std::shared_ptr<SocketSSLContext>& ssl_ctx,
-                    bool use_rdma);
-
-inline int SocketMapInsert(const SocketMapKey& key, SocketId* id,
-                    const std::shared_ptr<SocketSSLContext>& ssl_ctx) {
-    return SocketMapInsert(key, id, ssl_ctx, false);
-}
+                    const std::shared_ptr<SocketSSLContext>& ssl_ctx);
 
 inline int SocketMapInsert(const SocketMapKey& key, SocketId* id) {
     std::shared_ptr<SocketSSLContext> empty_ptr;
-    return SocketMapInsert(key, id, empty_ptr, false);
+    return SocketMapInsert(key, id, empty_ptr);
 }
 
 // Find the SocketId associated with `key'.
@@ -125,7 +119,7 @@ struct SocketMapOptions {
     // Initial size of the map (proper size reduces number of resizes)
     // Default: 1024
     size_t suggested_map_size;
-  
+    
     // Pooled connections without data transmission for so many seconds will
     // be closed. No effect for non-positive values.
     // If idle_timeout_second_dynamic is not NULL, use the dereferenced value
@@ -150,21 +144,16 @@ public:
     ~SocketMap();
     int Init(const SocketMapOptions&);
     int Insert(const SocketMapKey& key, SocketId* id,
-               const std::shared_ptr<SocketSSLContext>& ssl_ctx,
-               bool use_rdma);
-    int Insert(const SocketMapKey& key, SocketId* id,
-               const std::shared_ptr<SocketSSLContext>& ssl_ctx) {
-        return Insert(key, id, ssl_ctx, false);   
-    }
+               const std::shared_ptr<SocketSSLContext>& ssl_ctx);
     int Insert(const SocketMapKey& key, SocketId* id) {
         std::shared_ptr<SocketSSLContext> empty_ptr;
-        return Insert(key, id, empty_ptr, false);
+        return Insert(key, id, empty_ptr);
     }
 
     void Remove(const SocketMapKey& key, SocketId expected_id);
     int Find(const SocketMapKey& key, SocketId* id);
     void List(std::vector<SocketId>* ids);
-    void List(std::vector<butil::EndPoint>* pts);
+    void List(std::vector<sgxbutil::EndPoint>* pts);
     const SocketMapOptions& options() const { return _options; }
 
 private:
@@ -175,7 +164,6 @@ private:
     static void* RunWatchConnections(void*);
     void Print(std::ostream& os);
     static void PrintSocketMap(std::ostream& os, void* arg);
-    void ShowSocketMapInBvarIfNeed();
 
 private:
     struct SingleConnection {
@@ -186,13 +174,13 @@ private:
 
     // TODO: When RpcChannels connecting to one EndPoint are frequently created
     //       and destroyed, a single map+mutex may become hot-spots.
-    typedef butil::FlatMap<SocketMapKey, SingleConnection,
+    typedef sgxbutil::FlatMap<SocketMapKey, SingleConnection,
                            SocketMapKeyHasher> Map;
     SocketMapOptions _options;
-    butil::Mutex _mutex;
+    sgxbutil::Mutex _mutex;
     Map _map;
-    butil::atomic<bool> _exposed_in_bvar;
-    bvar::PassiveStatus<std::string>* _this_map_bvar;
+    bool _exposed_in_bvar;
+    // bvar::PassiveStatus<std::string>* _this_map_bvar;
     bool _has_close_idle_thread;
     bthread_t _close_idle_thread;
 };

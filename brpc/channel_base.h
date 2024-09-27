@@ -21,8 +21,8 @@
 
 #include <stdlib.h>
 #include <ostream>
-#include "butil/logging.h"
-#include <google/protobuf/service.h>            // google::protobuf::RpcChannel
+#include "sgxbutil/logging.h"
+#include "google/protobuf/service.h"            // google::protobuf::RpcChannel
 #include "brpc/describable.h"
 
 // To brpc developers: This is a header included by user, don't depend

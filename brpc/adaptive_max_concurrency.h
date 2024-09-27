@@ -21,23 +21,16 @@
 // To brpc developers: This is a header included by user, don't depend
 // on internal structures, use opaque pointers instead.
 
-#include "butil/strings/string_piece.h"
+#include "sgxbutil/strings/string_piece.h"
 #include "brpc/options.pb.h"
 
 namespace brpc {
-
-// timeout concurrency limiter config
-struct TimeoutConcurrencyConf {
-    int64_t timeout_ms;
-    int max_concurrency;
-};
 
 class AdaptiveMaxConcurrency{
 public:
     explicit AdaptiveMaxConcurrency();
     explicit AdaptiveMaxConcurrency(int max_concurrency);
-    explicit AdaptiveMaxConcurrency(const butil::StringPiece& value);
-    explicit AdaptiveMaxConcurrency(const TimeoutConcurrencyConf& value);
+    explicit AdaptiveMaxConcurrency(const sgxbutil::StringPiece& value);
 
     // Non-trivial destructor to prevent AdaptiveMaxConcurrency from being
     // passed to variadic arguments without explicit type conversion.
@@ -47,14 +40,12 @@ public:
     ~AdaptiveMaxConcurrency() {}
 
     void operator=(int max_concurrency);
-    void operator=(const butil::StringPiece& value);
-    void operator=(const TimeoutConcurrencyConf& value);
+    void operator=(const sgxbutil::StringPiece& value);
 
     // 0  for type="unlimited"
     // >0 for type="constant"
     // <0 for type="user-defined"
     operator int() const { return _max_concurrency; }
-    operator TimeoutConcurrencyConf() const { return _timeout_conf; }
 
     // "unlimited" for type="unlimited"
     // "10" "20" "30" for type="constant"
@@ -71,8 +62,6 @@ public:
 private:
     std::string _value;
     int _max_concurrency;
-    TimeoutConcurrencyConf
-        _timeout_conf;  // TODO std::varient for different type
 };
 
 inline std::ostream& operator<<(std::ostream& os, const AdaptiveMaxConcurrency& amc) {
@@ -80,19 +69,19 @@ inline std::ostream& operator<<(std::ostream& os, const AdaptiveMaxConcurrency& 
 }
 
 bool operator==(const AdaptiveMaxConcurrency& adaptive_concurrency,
-                       const butil::StringPiece& concurrency);
+                       const sgxbutil::StringPiece& concurrency);
 
-inline bool operator==(const butil::StringPiece& concurrency,
+inline bool operator==(const sgxbutil::StringPiece& concurrency,
                        const AdaptiveMaxConcurrency& adaptive_concurrency) {
     return adaptive_concurrency == concurrency;
 }
 
 inline bool operator!=(const AdaptiveMaxConcurrency& adaptive_concurrency,
-                       const butil::StringPiece& concurrency) {
+                       const sgxbutil::StringPiece& concurrency) {
     return !(adaptive_concurrency == concurrency);
 }
 
-inline bool operator!=(const butil::StringPiece& concurrency,
+inline bool operator!=(const sgxbutil::StringPiece& concurrency,
                   const AdaptiveMaxConcurrency& adaptive_concurrency) {
     return !(adaptive_concurrency == concurrency);
 }

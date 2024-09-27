@@ -17,7 +17,7 @@
 
 
 #include <limits>
-#include "butil/macros.h"
+#include "sgxbutil/macros.h"
 #include "brpc/controller.h"
 #include "brpc/details/server_private_accessor.h"
 #include "brpc/details/method_status.h"
@@ -38,33 +38,33 @@ static int cast_cl(void* arg) {
 
 MethodStatus::MethodStatus()
     : _nconcurrency(0)
-    , _nconcurrency_bvar(cast_int, &_nconcurrency)
-    , _eps_bvar(&_nerror_bvar)
-    , _max_concurrency_bvar(cast_cl, &_cl)
+    // , _nconcurrency_bvar(cast_int, &_nconcurrency)
+    // , _eps_bvar(&_nerror_bvar)
+    // , _max_concurrency_bvar(cast_cl, &_cl)
 {
 }
 
 MethodStatus::~MethodStatus() {
 }
 
-int MethodStatus::Expose(const butil::StringPiece& prefix) {
-    if (_nconcurrency_bvar.expose_as(prefix, "concurrency") != 0) {
-        return -1;
-    }
-    if (_nerror_bvar.expose_as(prefix, "error") != 0) {
-        return -1;
-    }
-    if (_eps_bvar.expose_as(prefix, "eps") != 0) {
-        return -1;
-    }
-    if (_latency_rec.expose(prefix) != 0) {
-        return -1;
-    }
-    if (_cl) {
-        if (_max_concurrency_bvar.expose_as(prefix, "max_concurrency") != 0) {
-            return -1;
-        }
-    }
+int MethodStatus::Expose(const sgxbutil::StringPiece& prefix) {
+    // if (_nconcurrency_bvar.expose_as(prefix, "concurrency") != 0) {
+    //     return -1;
+    // }
+    // if (_nerror_bvar.expose_as(prefix, "error") != 0) {
+    //     return -1;
+    // }
+    // if (_eps_bvar.expose_as(prefix, "eps") != 0) {
+    //     return -1;
+    // }
+    // if (_latency_rec.expose(prefix) != 0) {
+    //     return -1;
+    // }
+    // if (_cl) {
+    //     if (_max_concurrency_bvar.expose_as(prefix, "max_concurrency") != 0) {
+    //         return -1;
+    //     }
+    // } //- Remove bvar
     return 0;
 }
 
@@ -99,49 +99,49 @@ void OutputValue(std::ostream& os,
 void MethodStatus::Describe(
     std::ostream &os, const DescribeOptions& options) const {
     // success requests
-    OutputValue(os, "count: ", _latency_rec.count_name(), _latency_rec.count(),
-                options, false);
-    const int64_t qps = _latency_rec.qps();
-    const bool expand = (qps != 0);
-    OutputValue(os, "qps: ", _latency_rec.qps_name(), _latency_rec.qps(),
-                options, expand);
+    // OutputValue(os, "count: ", _latency_rec.count_name(), _latency_rec.count(),
+    //             options, false);
+    // const int64_t qps = _latency_rec.qps();
+    // const bool expand = (qps != 0);
+    // OutputValue(os, "qps: ", _latency_rec.qps_name(), _latency_rec.qps(),
+    //             options, expand);
 
     // errorous requests
-    OutputValue(os, "error: ", _nerror_bvar.name(), _nerror_bvar.get_value(),
-                options, false);
-    OutputValue(os, "eps: ", _eps_bvar.name(),
-                _eps_bvar.get_value(1), options, false);
+    // OutputValue(os, "error: ", _nerror_bvar.name(), _nerror_bvar.get_value(),
+    //             options, false);
+    // OutputValue(os, "eps: ", _eps_bvar.name(),
+    //             _eps_bvar.get_value(1), options, false);
 
     // latencies
-    OutputValue(os, "latency: ", _latency_rec.latency_name(),
-                _latency_rec.latency(), options, false);
+    // OutputValue(os, "latency: ", _latency_rec.latency_name(),
+    //             _latency_rec.latency(), options, false);
     if (options.use_html) {
-        OutputValue(os, "latency_percentiles: ",
-                    _latency_rec.latency_percentiles_name(),
-                    _latency_rec.latency_percentiles(), options, false);
-        OutputValue(os, "latency_cdf: ", _latency_rec.latency_cdf_name(),
-                    "click to view", options, expand);
+        // OutputValue(os, "latency_percentiles: ",
+        //             _latency_rec.latency_percentiles_name(),
+        //             _latency_rec.latency_percentiles(), options, false);
+        // OutputValue(os, "latency_cdf: ", _latency_rec.latency_cdf_name(),
+        //             "click to view", options, expand);
     } else {
-        OutputTextValue(os, "latency_50: ",
-                        _latency_rec.latency_percentile(0.5));
-        OutputTextValue(os, "latency_90: ",
-                        _latency_rec.latency_percentile(0.9));
-        OutputTextValue(os, "latency_99: ",
-                        _latency_rec.latency_percentile(0.99));
-        OutputTextValue(os, "latency_999: ",
-                        _latency_rec.latency_percentile(0.999));
-        OutputTextValue(os, "latency_9999: ",
-                        _latency_rec.latency_percentile(0.9999));
+        // OutputTextValue(os, "latency_50: ",
+        //                 _latency_rec.latency_percentile(0.5));
+        // OutputTextValue(os, "latency_90: ",
+        //                 _latency_rec.latency_percentile(0.9));
+        // OutputTextValue(os, "latency_99: ",
+        //                 _latency_rec.latency_percentile(0.99));
+        // OutputTextValue(os, "latency_999: ",
+        //                 _latency_rec.latency_percentile(0.999));
+        // OutputTextValue(os, "latency_9999: ",
+        //                 _latency_rec.latency_percentile(0.9999));
     }
-    OutputValue(os, "max_latency: ", _latency_rec.max_latency_name(),
-                _latency_rec.max_latency(), options, false);
+    // OutputValue(os, "max_latency: ", _latency_rec.max_latency_name(),
+    //             _latency_rec.max_latency(), options, false);
 
     // Concurrency
-    OutputValue(os, "concurrency: ", _nconcurrency_bvar.name(),
-                _nconcurrency, options, false);
+    // OutputValue(os, "concurrency: ", _nconcurrency_bvar.name(),
+    //             _nconcurrency, options, false);
     if (_cl) {
-        OutputValue(os, "max_concurrency: ", _max_concurrency_bvar.name(),
-                    MaxConcurrency(), options, false);
+        // OutputValue(os, "max_concurrency: ", _max_concurrency_bvar.name(),
+        //             MaxConcurrency(), options, false);
     }
 }
 
@@ -151,7 +151,7 @@ void MethodStatus::SetConcurrencyLimiter(ConcurrencyLimiter* cl) {
 
 ConcurrencyRemover::~ConcurrencyRemover() {
     if (_status) {
-        _status->OnResponded(_c->ErrorCode(), butil::cpuwide_time_us() - _received_us);
+        _status->OnResponded(_c->ErrorCode(), sgxbutil::cpuwide_time_us() - _received_us);
         _status = NULL;
     }
     ServerPrivateAccessor(_c->server()).RemoveConcurrency(_c);
