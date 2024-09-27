@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
@@ -24,7 +24,7 @@
 
 #include <pthread.h>                 // pthread_spin_init
 #include "bthread/butex.h"           // butex_construct/destruct
-#include "butil/atomicops.h"          // butil::atomic
+#include "sgxbutil/atomicops.h"          // sgxbutil::atomic
 #include "bthread/types.h"           // bthread_attr_t
 #include "bthread/stack.h"           // ContextualStack
 
@@ -50,11 +50,8 @@ const static LocalStorage LOCAL_STORAGE_INIT = BTHREAD_LOCAL_STORAGE_INITIALIZER
 
 struct TaskMeta {
     // [Not Reset]
-    butil::atomic<ButexWaiter*> current_waiter;
+    sgxbutil::atomic<ButexWaiter*> current_waiter;
     uint64_t current_sleep;
-
-    // A flag to mark if the Timer scheduling failed.
-    bool sleep_failed;
 
     // A builtin flag to mark if the thread is stopping.
     bool stop;

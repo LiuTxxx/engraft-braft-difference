@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
@@ -25,12 +25,12 @@
 namespace bthread {
 
 // Utilities to manipulate bthread_t
-inline bthread_t make_tid(uint32_t version, butil::ResourceId<TaskMeta> slot) {
+inline bthread_t make_tid(uint32_t version, sgxbutil::ResourceId<TaskMeta> slot) {
     return (((bthread_t)version) << 32) | (bthread_t)slot.value;
 }
 
-inline butil::ResourceId<TaskMeta> get_slot(bthread_t tid) {
-    butil::ResourceId<TaskMeta> id = { (tid & 0xFFFFFFFFul) };
+inline sgxbutil::ResourceId<TaskMeta> get_slot(bthread_t tid) {
+    sgxbutil::ResourceId<TaskMeta> id = { (tid & 0xFFFFFFFFul) };
     return id;
 }
 inline uint32_t get_version(bthread_t tid) {

@@ -15,17 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
 #ifndef BTHREAD_ID_H
 #define BTHREAD_ID_H
 
-#include "butil/macros.h"              // BAIDU_SYMBOLSTR
+#include "sgxbutil/macros.h"              // BAIDU_SYMBOLSTR
 #include "bthread/types.h"
 
-__BEGIN_DECLS
+extern "C" {
 
 // ----------------------------------------------------------------------
 // Functions to create 64-bit identifiers that can be attached with data
@@ -161,9 +161,8 @@ int bthread_id_list_reset_pthreadsafe(
 int bthread_id_list_reset_bthreadsafe(
     bthread_id_list_t* list, int error_code, bthread_mutex_t* mutex);
 
-__END_DECLS
+}
 
-#if defined(__cplusplus)
 // cpp specific API, with an extra `error_text' so that error information
 // is more comprehensive
 int bthread_id_create2(
@@ -188,6 +187,5 @@ int bthread_id_list_reset2_pthreadsafe(bthread_id_list_t* list, int error_code,
 int bthread_id_list_reset2_bthreadsafe(bthread_id_list_t* list, int error_code,
                                        const std::string& error_text,
                                        bthread_mutex_t* mutex);
-#endif
 
 #endif  // BTHREAD_ID_H

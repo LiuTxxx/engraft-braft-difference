@@ -15,14 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: 2017/07/27 23:07:06
 
 #ifndef BTHREAD_PARKING_LOT_H
 #define BTHREAD_PARKING_LOT_H
 
-#include "butil/atomicops.h"
+#include "sgxbutil/atomicops.h"
 #include "bthread/sys_futex.h"
 
 namespace bthread {
@@ -45,13 +45,13 @@ public:
     // Wake up at most `num_task' workers.
     // Returns #workers woken up.
     int signal(int num_task) {
-        _pending_signal.fetch_add((num_task << 1), butil::memory_order_release);
+        _pending_signal.fetch_add((num_task << 1), sgxbutil::memory_order_release);
         return futex_wake_private(&_pending_signal, num_task);
     }
 
     // Get a state for later wait().
     State get_state() {
-        return _pending_signal.load(butil::memory_order_acquire);
+        return _pending_signal.load(sgxbutil::memory_order_acquire);
     }
 
     // Wait for tasks.
@@ -67,7 +67,7 @@ public:
     }
 private:
     // higher 31 bits for signalling, LSB for stopping.
-    butil::atomic<int> _pending_signal;
+    sgxbutil::atomic<int> _pending_signal;
 };
 
 }  // namespace bthread

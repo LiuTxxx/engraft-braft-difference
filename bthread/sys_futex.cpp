@@ -15,18 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Wed Mar 14 17:44:58 CST 2018
 
 #include "bthread/sys_futex.h"
-#include "butil/scoped_lock.h"
-#include "butil/atomicops.h"
+#include "sgxbutil/scoped_lock.h"
+#include "sgxbutil/atomicops.h"
 #include <pthread.h>
 #include <unordered_map>
+#include <algorithm>
 
-#if defined(OS_MACOSX)
+#if RUN_OUTSIDE_SGX
+#include "host/host_utils.h"
+#else 
+#include "interface_t.h"
+#endif
 
+//- Simulated futex impl for enclaves
 namespace bthread {
 
 class SimuFutex {
@@ -61,6 +67,10 @@ static void InitFutexMap() {
 }
 
 int futex_wait_private(void* addr1, int expected, const timespec* timeout) {
+    if (timeout != NULL) {
+        LOG(FATAL) << "Func: " << __FUNCTION__ << " Futex with timeout should use another set of futex functions!";
+        return -1;
+    }
     if (pthread_once(&init_futex_map_once, InitFutexMap) != 0) {
         LOG(FATAL) << "Fail to pthread_once";
         exit(1);
@@ -73,19 +83,11 @@ int futex_wait_private(void* addr1, int expected, const timespec* timeout) {
     int rc = 0;
     {
         std::unique_lock<pthread_mutex_t> mu1(simu_futex.lock);
-        if (static_cast<butil::atomic<int>*>(addr1)->load() == expected) {
+        if (static_cast<sgxbutil::atomic<int>*>(addr1)->load() == expected) {
             ++simu_futex.counts;
-            if (timeout) {
-                timespec timeout_abs = butil::timespec_from_now(*timeout);
-                if ((rc = pthread_cond_timedwait(&simu_futex.cond, &simu_futex.lock, &timeout_abs)) != 0) {
-                    errno = rc;
-                    rc = -1;
-                }
-            } else {
-                if ((rc = pthread_cond_wait(&simu_futex.cond, &simu_futex.lock)) != 0) {
-                    errno = rc;
-                    rc = -1;
-                }
+            if ((rc = pthread_cond_wait(&simu_futex.cond, &simu_futex.lock)) != 0) {
+                errno = rc;
+                rc = -1;
             }
             --simu_futex.counts;
         } else {
@@ -140,6 +142,39 @@ int futex_wake_private(void* addr1, int nwake) {
     return nwakedup;
 }
 
-} // namespace bthread
+int futex_wait_timeout(void* addr1, int expected, timespec* timeout) {
+    // if (timeout == NULL) {
+    //     LOG(FATAL) << "Func: " << __FUNCTION__ << " Futex without timeout should use another set of futex functions!";
+    //     return -1;
+    // }
+    int ret = 0;
+    int errnum = 0;
+    // LOG(INFO) << "Func: " << __FUNCTION__ << " addr = " << addr1
+    //     << "; addr1_val = " << *(int*)addr1;
+    // if (timeout != NULL) {
+    //     LOG(INFO) << "Func: " << __FUNCTION__ << " sec = " << timeout->tv_sec
+    //         << " nsec = " << timeout->tv_nsec;
+    // }
+    ocall_futex_wait_private(addr1, expected, timeout, &ret, &errnum);
+    if (ret != 0) {
+        errno = errnum;
+    }
+    // LOG(INFO) << "Func: " << __FUNCTION__ << " wait finished";
+    return ret;
+}
 
-#endif
+int futex_wake_timeout(void* addr1, int nwake) {
+    // LOG(INFO) << "Func: " << __FUNCTION__ << " addr = " << addr1
+    //     << "; addr1_val = " << *(int*)addr1;
+    int ret = 0;
+    int errnum = 0;
+    ocall_futex_wake_private(addr1, nwake, &ret, &errnum);
+    // LOG(INFO) << "Func: " << __FUNCTION__ << " ret = " << ret
+    //     << "; errnum = " << errnum;
+    if (ret < 0) {
+        errno = errnum;
+    }
+    return ret;
+}
+
+} // namespace bthread

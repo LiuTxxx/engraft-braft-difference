@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Sun Sep  7 22:37:39 CST 2014
 
@@ -68,11 +68,11 @@ template <typename StackClass> struct StackFactory {
     };
     
     static ContextualStack* get_stack(void (*entry)(intptr_t)) {
-        return butil::get_object<Wrapper>(entry);
+        return sgxbutil::get_object<Wrapper>(entry);
     }
     
     static void return_stack(ContextualStack* sc) {
-        butil::return_object(static_cast<Wrapper*>(sc));
+        sgxbutil::return_object(static_cast<Wrapper*>(sc));
     }
 };
 
@@ -129,12 +129,14 @@ inline void return_stack(ContextualStack* s) {
 }
 
 inline void jump_stack(ContextualStack* from, ContextualStack* to) {
+    // LOG(INFO) << "Func: " << __FUNCTION__ << " #1";
     bthread_jump_fcontext(&from->context, to->context, 0/*not skip remained*/);
+    // LOG(INFO) << "Func: " << __FUNCTION__ << " #2";
 }
 
 }  // namespace bthread
 
-namespace butil {
+namespace sgxbutil {
 
 template <> struct ObjectPoolBlockMaxItem<
     bthread::StackFactory<bthread::LargeStackClass>::Wrapper> {
@@ -193,6 +195,6 @@ template <> struct ObjectPoolValidator<
     }
 };
     
-}  // namespace butil
+}  // namespace sgxbutil
 
 #endif  // BTHREAD_ALLOCATE_STACK_INL_H

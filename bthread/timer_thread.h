@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 
 #ifndef BTHREAD_TIMER_THREAD_H
@@ -23,8 +23,8 @@
 
 #include <vector>                     // std::vector
 #include <pthread.h>                  // pthread_*
-#include "butil/atomicops.h" 
-#include "butil/time.h"                // time utilities
+#include "sgxbutil/atomicops.h" 
+#include "sgxbutil/time.h"                // time utilities
 #include "bthread/mutex.h"
 
 namespace bthread {
@@ -84,22 +84,27 @@ public:
     // Get identifier of internal pthread.
     // Returns (pthread_t)0 if start() is not called yet.
     pthread_t thread_id() const { return _thread; }
+    //- Make it public to fit ecall
+    int* _nsignals_ptr;
+    // the timer thread will run this method.
+    //- Make it public to fit ecall
+    void run();
     
 private:
-    // the timer thread will run this method.
-    void run();
+    
     static void* run_this(void* arg);
 
     bool _started;            // whether the timer thread was started successfully.
-    butil::atomic<bool> _stop;
+    sgxbutil::atomic<bool> _stop;
 
     TimerThreadOptions _options;
     Bucket* _buckets;        // list of tasks to be run
-    FastPthreadMutex _mutex;    // protect _nearest_run_time
+    internal::FastPthreadMutex _mutex;    // protect _nearest_run_time
     int64_t _nearest_run_time;
     // the futex for wake up timer thread. can't use _nearest_run_time because
     // it's 64-bit.
-    int _nsignals;
+    // int _nsignals;
+    
     pthread_t _thread;       // all scheduled task will be run on this thread
 };
 

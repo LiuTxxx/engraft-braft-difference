@@ -15,16 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 
 #include <queue>                           // heap functions
-#include "butil/scoped_lock.h"
-#include "butil/logging.h"
-#include "butil/third_party/murmurhash3/murmurhash3.h"   // fmix64
-#include "butil/resource_pool.h"
-#include "butil/threading/platform_thread.h"
-#include "bvar/bvar.h"
+#include "sgxbutil/scoped_lock.h"
+#include "sgxbutil/logging.h"
+#include "sgxbutil/third_party/murmurhash3/murmurhash3.h"   // fmix64
+#include "sgxbutil/resource_pool.h"
+//- Remove bvar
+// #include "bvar/bvar.h"
 #include "bthread/sys_futex.h"
 #include "bthread/timer_thread.h"
 #include "bthread/log.h"
@@ -54,7 +54,7 @@ struct BAIDU_CACHELINE_ALIGNMENT TimerThread::Task {
     // initial_version + 1: running
     // initial_version + 2: removed (also the version of next Task reused
     //                      this struct)
-    butil::atomic<uint32_t> version;
+    sgxbutil::atomic<uint32_t> version;
 
     Task() : version(2/*skip 0*/) {}
 
@@ -92,20 +92,20 @@ public:
     Task* consume_tasks();
 
 private:
-    FastPthreadMutex _mutex;
+    internal::FastPthreadMutex _mutex;
     int64_t _nearest_run_time;
     Task* _task_head;
 };
 
 // Utilies for making and extracting TaskId.
 inline TimerThread::TaskId make_task_id(
-    butil::ResourceId<TimerThread::Task> slot, uint32_t version) {
+    sgxbutil::ResourceId<TimerThread::Task> slot, uint32_t version) {
     return TimerThread::TaskId((((uint64_t)version) << 32) | slot.value);
 }
 
 inline
-butil::ResourceId<TimerThread::Task> slot_of_task_id(TimerThread::TaskId id) {
-    butil::ResourceId<TimerThread::Task> slot = { (id & 0xFFFFFFFFul) };
+sgxbutil::ResourceId<TimerThread::Task> slot_of_task_id(TimerThread::TaskId id) {
+    sgxbutil::ResourceId<TimerThread::Task> slot = { (id & 0xFFFFFFFFul) };
     return slot;
 }
 
@@ -118,7 +118,6 @@ inline bool task_greater(const TimerThread::Task* a, const TimerThread::Task* b)
 }
 
 void* TimerThread::run_this(void* arg) {
-    butil::PlatformThread::SetName("brpc_timer");
     static_cast<TimerThread*>(arg)->run();
     return NULL;
 }
@@ -128,7 +127,8 @@ TimerThread::TimerThread()
     , _stop(false)
     , _buckets(NULL)
     , _nearest_run_time(std::numeric_limits<int64_t>::max())
-    , _nsignals(0)
+    // , _nsignals(0)
+    , _nsignals_ptr(NULL)
     , _thread(0) {
 }
 
@@ -158,7 +158,8 @@ int TimerThread::start(const TimerThreadOptions* options_in) {
         LOG(ERROR) << "Fail to new _buckets";
         return ENOMEM;
     }        
-    const int ret = pthread_create(&_thread, NULL, TimerThread::run_this, this);
+    int ret = 0;
+    ocall_pthread_timer_thread(&ret, &_thread);
     if (ret) {
         return ret;
     }
@@ -185,8 +186,8 @@ TimerThread::Task* TimerThread::Bucket::consume_tasks() {
 TimerThread::Bucket::ScheduleResult
 TimerThread::Bucket::schedule(void (*fn)(void*), void* arg,
                               const timespec& abstime) {
-    butil::ResourceId<Task> slot_id;
-    Task* task = butil::get_resource<Task>(&slot_id);
+    sgxbutil::ResourceId<Task> slot_id;
+    Task* task = sgxbutil::get_resource<Task>(&slot_id);
     if (task == NULL) {
         ScheduleResult result = { INVALID_TASK_ID, false };
         return result;
@@ -194,10 +195,10 @@ TimerThread::Bucket::schedule(void (*fn)(void*), void* arg,
     task->next = NULL;
     task->fn = fn;
     task->arg = arg;
-    task->run_time = butil::timespec_to_microseconds(abstime);
-    uint32_t version = task->version.load(butil::memory_order_relaxed);
+    task->run_time = sgxbutil::timespec_to_microseconds(abstime);
+    uint32_t version = task->version.load(sgxbutil::memory_order_relaxed);
     if (version == 0) {  // skip 0.
-        task->version.fetch_add(2, butil::memory_order_relaxed);
+        task->version.fetch_add(2, sgxbutil::memory_order_relaxed);
         version = 2;
     }
     const TaskId id = make_task_id(slot_id, version);
@@ -218,44 +219,48 @@ TimerThread::Bucket::schedule(void (*fn)(void*), void* arg,
 
 TimerThread::TaskId TimerThread::schedule(
     void (*fn)(void*), void* arg, const timespec& abstime) {
-    if (_stop.load(butil::memory_order_relaxed) || !_started) {
+    if (_stop.load(sgxbutil::memory_order_relaxed) || !_started) {
         // Not add tasks when TimerThread is about to stop.
         return INVALID_TASK_ID;
     }
     // Hashing by pthread id is better for cache locality.
     const Bucket::ScheduleResult result = 
-        _buckets[butil::fmix64(pthread_numeric_id()) % _options.num_buckets]
+        _buckets[sgxbutil::fmix64(pthread_numeric_id()) % _options.num_buckets]
         .schedule(fn, arg, abstime);
     if (result.earlier) {
         bool earlier = false;
-        const int64_t run_time = butil::timespec_to_microseconds(abstime);
+        const int64_t run_time = sgxbutil::timespec_to_microseconds(abstime);
         {
             BAIDU_SCOPED_LOCK(_mutex);
             if (run_time < _nearest_run_time) {
                 _nearest_run_time = run_time;
-                ++_nsignals;
+                // ++_nsignals;
+                ++(*_nsignals_ptr);
                 earlier = true;
             }
         }
         if (earlier) {
-            futex_wake_private(&_nsignals, 1);
+            // futex_wake_private(&_nsignals, 1);
+            // LOG(INFO) << "Func: " << __FUNCTION__ << " printing nsignals = " << _nsignals_ptr;
+            // LOG(INFO) << "Func: " << __FUNCTION__ << " nsignals = " << *_nsignals_ptr;
+            futex_wake_timeout((void*)_nsignals_ptr, 1);
         }
     }
     return result.task_id;
 }
 
 // Notice that we don't recycle the Task in this function, let TimerThread::run
-// do it. The side effect is that we may allocate many unscheduled tasks before
-// TimerThread wakes up. The number is approximately qps * timeout_s. Under the
+// do it. The side effect is that we may allocated many unscheduled tasks before
+// TimerThread wakes up. The number is approximiately qps * timeout_s. Under the
 // precondition that ResourcePool<Task> caches 128K for each thread, with some
 // further calculations, we can conclude that in a RPC scenario:
 //   when timeout / latency < 2730 (128K / sizeof(Task))
-// unscheduled tasks do not occupy additional memory. 2730 is a large ratio
+// unscheduled tasks do not occupy addititonal memory. 2730 is a large ratio
 // between timeout and latency in most RPC scenarios, this is why we don't
 // try to reuse tasks right now inside unschedule() with more complicated code.
 int TimerThread::unschedule(TaskId task_id) {
-    const butil::ResourceId<Task> slot_id = slot_of_task_id(task_id);
-    Task* const task = butil::address_resource(slot_id);
+    const sgxbutil::ResourceId<Task> slot_id = slot_of_task_id(task_id);
+    Task* const task = sgxbutil::address_resource(slot_id);
     if (task == NULL) {
         LOG(ERROR) << "Invalid task_id=" << task_id;
         return -1;
@@ -267,7 +272,7 @@ int TimerThread::unschedule(TaskId task_id) {
     // to make sure that we see all changes brought by fn(arg).
     if (task->version.compare_exchange_strong(
             expected_version, id_version + 2,
-            butil::memory_order_acquire)) {
+            sgxbutil::memory_order_acquire)) {
         return 0;
     }
     return (expected_version == id_version + 1) ? 1 : -1;
@@ -278,16 +283,16 @@ bool TimerThread::Task::run_and_delete() {
     uint32_t expected_version = id_version;
     // This CAS is rarely contended, should be fast.
     if (version.compare_exchange_strong(
-            expected_version, id_version + 1, butil::memory_order_relaxed)) {
+            expected_version, id_version + 1, sgxbutil::memory_order_relaxed)) {
         fn(arg);
         // The release fence is paired with acquire fence in
         // TimerThread::unschedule to make changes of fn(arg) visible.
-        version.store(id_version + 2, butil::memory_order_release);
-        butil::return_resource(slot_of_task_id(task_id));
+        version.store(id_version + 2, sgxbutil::memory_order_release);
+        sgxbutil::return_resource(slot_of_task_id(task_id));
         return true;
     } else if (expected_version == id_version + 2) {
         // already unscheduled.
-        butil::return_resource(slot_of_task_id(task_id));
+        sgxbutil::return_resource(slot_of_task_id(task_id));
         return false;
     } else {
         // Impossible.
@@ -299,9 +304,9 @@ bool TimerThread::Task::run_and_delete() {
 
 bool TimerThread::Task::try_delete() {
     const uint32_t id_version = version_of_task_id(task_id);
-    if (version.load(butil::memory_order_relaxed) != id_version) {
-        CHECK_EQ(version.load(butil::memory_order_relaxed), id_version + 2);
-        butil::return_resource(slot_of_task_id(task_id));
+    if (version.load(sgxbutil::memory_order_relaxed) != id_version) {
+        CHECK_EQ(version.load(sgxbutil::memory_order_relaxed), id_version + 2);
+        sgxbutil::return_resource(slot_of_task_id(task_id));
         return true;
     }
     return false;
@@ -318,7 +323,7 @@ void TimerThread::run() {
     logging::ComlogInitializer comlog_initializer;
 #endif
 
-    int64_t last_sleep_time = butil::gettimeofday_us();
+    int64_t last_sleep_time = sgxbutil::gettimeofday_us();
     BT_VLOG << "Started TimerThread=" << pthread_self();
 
     // min heap of tasks (ordered by run_time)
@@ -327,21 +332,26 @@ void TimerThread::run() {
 
     // vars
     size_t nscheduled = 0;
-    bvar::PassiveStatus<size_t> nscheduled_var(deref_value<size_t>, &nscheduled);
-    bvar::PerSecond<bvar::PassiveStatus<size_t> > nscheduled_second(&nscheduled_var);
+    //- Remove bvar
+    // bvar::PassiveStatus<size_t> nscheduled_var(deref_value<size_t>, &nscheduled);
+    // bvar::PerSecond<bvar::PassiveStatus<size_t> > nscheduled_second(&nscheduled_var);
+
     size_t ntriggered = 0;
-    bvar::PassiveStatus<size_t> ntriggered_var(deref_value<size_t>, &ntriggered);
-    bvar::PerSecond<bvar::PassiveStatus<size_t> > ntriggered_second(&ntriggered_var);
+    //- Remove bvar
+    // bvar::PassiveStatus<size_t> ntriggered_var(deref_value<size_t>, &ntriggered);
+    // bvar::PerSecond<bvar::PassiveStatus<size_t> > ntriggered_second(&ntriggered_var);
+
     double busy_seconds = 0;
-    bvar::PassiveStatus<double> busy_seconds_var(deref_value<double>, &busy_seconds);
-    bvar::PerSecond<bvar::PassiveStatus<double> > busy_seconds_second(&busy_seconds_var);
-    if (!_options.bvar_prefix.empty()) {
-        nscheduled_second.expose_as(_options.bvar_prefix, "scheduled_second");
-        ntriggered_second.expose_as(_options.bvar_prefix, "triggered_second");
-        busy_seconds_second.expose_as(_options.bvar_prefix, "usage");
-    }
+    //- Remove bvar
+    // bvar::PassiveStatus<double> busy_seconds_var(deref_value<double>, &busy_seconds);
+    // bvar::PerSecond<bvar::PassiveStatus<double> > busy_seconds_second(&busy_seconds_var);
+    // if (!_options.bvar_prefix.empty()) {
+    //     nscheduled_second.expose_as(_options.bvar_prefix, "scheduled_second");
+    //     ntriggered_second.expose_as(_options.bvar_prefix, "triggered_second");
+    //     busy_seconds_second.expose_as(_options.bvar_prefix, "usage");
+    // }
     
-    while (!_stop.load(butil::memory_order_relaxed)) {
+    while (!_stop.load(sgxbutil::memory_order_relaxed)) {
         // Clear _nearest_run_time before consuming tasks from buckets.
         // This helps us to be aware of earliest task of the new tasks before we
         // would run the consumed tasks.
@@ -369,7 +379,12 @@ void TimerThread::run() {
         bool pull_again = false;
         while (!tasks.empty()) {
             Task* task1 = tasks[0];  // the about-to-run task
-            if (butil::gettimeofday_us() < task1->run_time) {  // not ready yet.
+            if (task1->try_delete()) { // already unscheduled
+                std::pop_heap(tasks.begin(), tasks.end(), task_greater);
+                tasks.pop_back();
+                continue;
+            }
+            if (sgxbutil::gettimeofday_us() < task1->run_time) {  // not ready yet.
                 break;
             }
             // Each time before we run the earliest task (that we think), 
@@ -403,53 +418,65 @@ void TimerThread::run() {
 
         // The realtime to wait for.
         int64_t next_run_time = std::numeric_limits<int64_t>::max();
-        if (!tasks.empty()) {
+        if (tasks.empty()) {
+            next_run_time = std::numeric_limits<int64_t>::max();
+        } else {
             next_run_time = tasks[0]->run_time;
         }
         // Similarly with the situation before running tasks, we check
         // _nearest_run_time to prevent us from waiting on a non-earliest
         // task. We also use the _nsignal to make sure that if new task 
-        // is earlier than the realtime that we wait for, we'll wake up.
+        // is earlier that the realtime that we wait for, we'll wake up.
         int expected_nsignals = 0;
         {
             BAIDU_SCOPED_LOCK(_mutex);
             if (next_run_time > _nearest_run_time) {
-                // a task is earlier than what we would wait for.
-                // We need to check the buckets.
+                // a task is earlier that what we would wait for.
+                // We need to check buckets.
                 continue;
             } else {
                 _nearest_run_time = next_run_time;
-                expected_nsignals = _nsignals;
+                // expected_nsignals = _nsignals;
+                expected_nsignals = *_nsignals_ptr;
             }
         }
         timespec* ptimeout = NULL;
         timespec next_timeout = { 0, 0 };
-        const int64_t now = butil::gettimeofday_us();
+        const int64_t now = sgxbutil::gettimeofday_us();
         if (next_run_time != std::numeric_limits<int64_t>::max()) {
-            next_timeout = butil::microseconds_to_timespec(next_run_time - now);
+            next_timeout = sgxbutil::microseconds_to_timespec(next_run_time - now);
             ptimeout = &next_timeout;
         }
         busy_seconds += (now - last_sleep_time) / 1000000.0;
-        futex_wait_private(&_nsignals, expected_nsignals, ptimeout);
-        last_sleep_time = butil::gettimeofday_us();
+        // futex_wait_private(&_nsignals, expected_nsignals, ptimeout);
+        // LOG(INFO) << "Func: " << __FUNCTION__ << " Calling futex_wait_timeout";
+        // LOG(INFO) << "Func: " << __FUNCTION__ << " printing nsignals.";
+        // LOG(INFO) << "Func: " << __FUNCTION__ << " nsignals = " << *_nsignals_ptr;
+        futex_wait_timeout(_nsignals_ptr, expected_nsignals, ptimeout);
+        last_sleep_time = sgxbutil::gettimeofday_us();
     }
     BT_VLOG << "Ended TimerThread=" << pthread_self();
 }
 
 void TimerThread::stop_and_join() {
-    _stop.store(true, butil::memory_order_relaxed);
+    _stop.store(true, sgxbutil::memory_order_relaxed);
     if (_started) {
         {
             BAIDU_SCOPED_LOCK(_mutex);
              // trigger pull_again and wakeup TimerThread
             _nearest_run_time = 0;
-            ++_nsignals;
+            // ++_nsignals;
+            ++(*_nsignals_ptr);
         }
         if (pthread_self() != _thread) {
             // stop_and_join was not called from a running task.
             // wake up the timer thread in case it is sleeping.
-            futex_wake_private(&_nsignals, 1);
-            pthread_join(_thread, NULL);
+            // futex_wake_private(&_nsignals, 1);
+            LOG(INFO) << "Func: " << __FUNCTION__ << " printing nsignals.";
+            LOG(INFO) << "Func: " << __FUNCTION__ << " nsignals = " << *_nsignals_ptr;
+            futex_wake_timeout(_nsignals_ptr, 1);
+            // pthread_join(_thread, NULL);
+            ocall_join_pthread(_thread);
         }
     }
 }
@@ -481,3 +508,9 @@ TimerThread* get_global_timer_thread() {
 }
 
 }  // end namespace bthread
+
+void ecall_pthread_timer_thread(void* futex) {
+    bthread::g_timer_thread->_nsignals_ptr = (int*)futex;
+    *(bthread::g_timer_thread->_nsignals_ptr) = 0;
+    bthread::g_timer_thread->run();
+}

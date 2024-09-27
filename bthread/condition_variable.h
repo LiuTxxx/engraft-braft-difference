@@ -15,17 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: 2015/12/14 21:26:26
 
 #ifndef  BTHREAD_CONDITION_VARIABLE_H
 #define  BTHREAD_CONDITION_VARIABLE_H
 
-#include "butil/time.h"
+#include "sgxbutil/time.h"
 #include "bthread/mutex.h"
 
-__BEGIN_DECLS
+extern "C" {
 extern int bthread_cond_init(bthread_cond_t* __restrict cond,
                              const bthread_condattr_t* __restrict cond_attr);
 extern int bthread_cond_destroy(bthread_cond_t* cond);
@@ -37,7 +37,7 @@ extern int bthread_cond_timedwait(
     bthread_cond_t* __restrict cond,
     bthread_mutex_t* __restrict mutex,
     const struct timespec* __restrict abstime);
-__END_DECLS
+}
 
 namespace bthread {
 
@@ -67,12 +67,12 @@ public:
     // rather than std::timeout
     int wait_for(std::unique_lock<bthread::Mutex>& lock,
                  long timeout_us) {
-        return wait_until(lock, butil::microseconds_from_now(timeout_us));
+        return wait_until(lock, sgxbutil::microseconds_from_now(timeout_us));
     }
 
     int wait_for(std::unique_lock<bthread_mutex_t>& lock,
                  long timeout_us) {
-        return wait_until(lock, butil::microseconds_from_now(timeout_us));
+        return wait_until(lock, sgxbutil::microseconds_from_now(timeout_us));
     }
 
     int wait_until(std::unique_lock<bthread::Mutex>& lock,

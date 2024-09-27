@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
@@ -27,14 +27,18 @@
 #include "bthread/types.h"
 #include "bthread/errno.h"
 
-#if defined(__cplusplus)
 #  include <iostream>
 #  include "bthread/mutex.h"        // use bthread_mutex_t in the RAII way
-#endif
 
 #include "bthread/id.h"
 
-__BEGIN_DECLS
+namespace bthread {
+//- In bthread/fd.cpp
+int pthread_fd_wait(int fd, unsigned events,
+                    const timespec* abstime);
+}
+
+extern "C" {
 
 // Create bthread `fn(args)' with attributes `attr' and put the identifier into
 // `tid'. Switch to the new thread and schedule old thread to run. Use this
@@ -73,7 +77,7 @@ extern int bthread_start_background(bthread_t* __restrict tid,
 // bthread_interrupt() guarantees that Thread2 is woken up reliably no matter
 // how the 2 threads are interleaved.
 // Returns 0 on success, errno otherwise.
-extern int bthread_interrupt(bthread_t tid, bthread_tag_t tag = BTHREAD_TAG_DEFAULT);
+extern int bthread_interrupt(bthread_t tid);
 
 // Make bthread_stopped() on the bthread return true and interrupt the bthread.
 // Note that current bthread_stop() solely sets the built-in "stop flag" and
@@ -145,12 +149,6 @@ extern int bthread_getconcurrency(void);
 // take some time to quit or create.
 // NOTE: currently concurrency cannot be reduced after any bthread created.
 extern int bthread_setconcurrency(int num);
-
-// Get number of worker pthreads by tag
-extern int bthread_getconcurrency_by_tag(bthread_tag_t tag);
-
-// Set number of worker pthreads to `num' for specified tag
-extern int bthread_setconcurrency_by_tag(int num, bthread_tag_t tag);
 
 // Yield processor to another bthread. 
 // Notice that current implementation is not fair, which means that 
@@ -333,18 +331,6 @@ extern int bthread_setspecific(bthread_key_t key, void* data);
 // If the key is invalid or deleted, return NULL.
 extern void* bthread_getspecific(bthread_key_t key);
 
-// Return current bthread tag
-extern bthread_tag_t bthread_self_tag(void);
-
-// The first call to bthread_once() by any thread in a process, with a given
-// once_control, will call the init_routine() with no arguments. Subsequent
-// calls of bthread_once() with the same once_control will not call the
-// init_routine(). On return from bthread_once(), it is guaranteed that
-// init_routine() has completed. The once_control parameter is used to
-// determine whether the associated initialisation routine has been called.
-// Returns 0 on success, error code otherwise.
-extern int bthread_once(bthread_once_t* once_control, void (*init_routine)());
-
-__END_DECLS
+}
 
 #endif  // BTHREAD_BTHREAD_H

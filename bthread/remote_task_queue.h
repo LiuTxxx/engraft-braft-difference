@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Sun, 22 Jan 2017
 
 #ifndef BTHREAD_REMOTE_TASK_QUEUE_H
 #define BTHREAD_REMOTE_TASK_QUEUE_H
 
-#include "butil/containers/bounded_queue.h"
-#include "butil/macros.h"
+#include "sgxbutil/containers/bounded_queue.h"
+#include "sgxbutil/macros.h"
 
 namespace bthread {
 
@@ -43,7 +43,7 @@ public:
         if (q_mem == NULL) {
             return -1;
         }
-        butil::BoundedQueue<bthread_t> q(q_mem, memsize, butil::OWNS_STORAGE);
+        sgxbutil::BoundedQueue<bthread_t> q(q_mem, memsize, sgxbutil::OWNS_STORAGE);
         _tasks.swap(q);
         return 0;
     }
@@ -74,8 +74,8 @@ public:
 private:
 friend class TaskGroup;
     DISALLOW_COPY_AND_ASSIGN(RemoteTaskQueue);
-    butil::BoundedQueue<bthread_t> _tasks;
-    butil::Mutex _mutex;
+    sgxbutil::BoundedQueue<bthread_t> _tasks;
+    sgxbutil::Mutex _mutex;
 };
 
 }  // namespace bthread

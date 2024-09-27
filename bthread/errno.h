@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Wed Jul 30 11:47:19 CST 2014
 
@@ -23,9 +23,9 @@
 #define BTHREAD_ERRNO_H
 
 #include <errno.h>                    // errno
-#include "butil/errno.h"               // berror(), DEFINE_BTHREAD_ERRNO
+#include "sgxbutil/errno.h"               // berror(), DEFINE_BTHREAD_ERRNO
 
-__BEGIN_DECLS
+extern "C" {
 
 extern int *bthread_errno_location();
 
@@ -37,6 +37,6 @@ extern int *bthread_errno_location();
 // List errno used throughout bthread
 extern const int ESTOP;
 
-__END_DECLS
+}
 
 #endif  //BTHREAD_ERRNO_H

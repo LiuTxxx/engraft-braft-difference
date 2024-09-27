@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: 2015/12/14 18:17:04
 
@@ -23,10 +23,11 @@
 #define  BTHREAD_MUTEX_H
 
 #include "bthread/types.h"
-#include "butil/scoped_lock.h"
-#include "bvar/utils/lock_timer.h"
+#include "sgxbutil/scoped_lock.h"
+//- Remove bvar
+// #include "bvar/utils/lock_timer.h"
 
-__BEGIN_DECLS
+extern "C" {
 extern int bthread_mutex_init(bthread_mutex_t* __restrict mutex,
                               const bthread_mutexattr_t* __restrict mutex_attr);
 extern int bthread_mutex_destroy(bthread_mutex_t* mutex);
@@ -35,7 +36,7 @@ extern int bthread_mutex_lock(bthread_mutex_t* mutex);
 extern int bthread_mutex_timedlock(bthread_mutex_t* __restrict mutex,
                                    const struct timespec* __restrict abstime);
 extern int bthread_mutex_unlock(bthread_mutex_t* mutex);
-__END_DECLS
+}
 
 namespace bthread {
 
@@ -72,7 +73,7 @@ namespace internal {
 class FastPthreadMutex {
 public:
     FastPthreadMutex() : _futex(0) {}
-    ~FastPthreadMutex() = default;
+    ~FastPthreadMutex() {}
     void lock();
     void unlock();
     bool try_lock();
@@ -82,22 +83,9 @@ private:
     unsigned _futex;
 };
 #else
-typedef butil::Mutex FastPthreadMutex;
-#endif
+typedef sgxbutil::Mutex FastPthreadMutex;
+#endif // BTHREAD_USE_FAST_PTHREAD_MUTEX
 }
-
-class FastPthreadMutex {
-public:
-    FastPthreadMutex() = default;
-    ~FastPthreadMutex() = default;
-    DISALLOW_COPY_AND_ASSIGN(FastPthreadMutex);
-
-    void lock();
-    void unlock();
-    bool try_lock() { return _mutex.try_lock(); }
-private:
-    internal::FastPthreadMutex _mutex;
-};
 
 }  // namespace bthread
 
@@ -219,22 +207,23 @@ private:
 
 }  // namespace std
 
-namespace bvar {
+//- Remove bvar
+// namespace bvar {
 
-template <>
-struct MutexConstructor<bthread_mutex_t> {
-    bool operator()(bthread_mutex_t* mutex) const { 
-        return bthread_mutex_init(mutex, NULL) == 0;
-    }
-};
+// template <>
+// struct MutexConstructor<bthread_mutex_t> {
+//     bool operator()(bthread_mutex_t* mutex) const { 
+//         return bthread_mutex_init(mutex, NULL) == 0;
+//     }
+// };
 
-template <>
-struct MutexDestructor<bthread_mutex_t> {
-    bool operator()(bthread_mutex_t* mutex) const { 
-        return bthread_mutex_destroy(mutex) == 0;
-    }
-};
+// template <>
+// struct MutexDestructor<bthread_mutex_t> {
+//     bool operator()(bthread_mutex_t* mutex) const { 
+//         return bthread_mutex_destroy(mutex) == 0;
+//     }
+// };
 
-}  // namespace bvar
+// }  // namespace bvar
 
 #endif  //BTHREAD_MUTEX_H

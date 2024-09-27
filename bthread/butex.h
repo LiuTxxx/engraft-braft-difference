@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Tue Jul 22 17:30:12 CST 2014
 
@@ -24,7 +24,7 @@
 
 #include <errno.h>                               // users need to check errno
 #include <time.h>                                // timespec
-#include "butil/macros.h"                         // BAIDU_CASSERT
+#include "sgxbutil/macros.h"                         // BAIDU_CASSERT
 #include "bthread/types.h"                       // bthread_t
 
 namespace bthread {
@@ -46,11 +46,11 @@ void butex_destroy(void* butex);
 
 // Wake up at most 1 thread waiting on |butex|.
 // Returns # of threads woken up.
-int butex_wake(void* butex, bool nosignal = false);
+int butex_wake(void* butex);
 
 // Wake up all threads waiting on |butex|.
 // Returns # of threads woken up.
-int butex_wake_all(void* butex, bool nosignal = false);
+int butex_wake_all(void* butex);
 
 // Wake up all threads waiting on |butex| except a bthread whose identifier
 // is |excluded_bthread|. This function does not yield.
@@ -67,13 +67,8 @@ int butex_requeue(void* butex1, void* butex2);
 // abstime is not NULL.
 // About |abstime|:
 //   Different from FUTEX_WAIT, butex_wait uses absolute time.
-// About |prepend|:
-//   If |prepend| is true, queue the bthread at the head of the queue,
-//   otherwise at the tail.
 // Returns 0 on success, -1 otherwise and errno is set.
-int butex_wait(void* butex, int expected_value,
-               const timespec* abstime,
-               bool prepend = false);
+int butex_wait(void* butex, int expected_value, const timespec* abstime);
 
 }  // namespace bthread
 

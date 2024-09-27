@@ -15,16 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Sun Aug  3 12:46:15 CST 2014
 
 #include <deque>
-#include "butil/logging.h"
+#include "sgxbutil/logging.h"
 #include "bthread/butex.h"                       // butex_*
 #include "bthread/mutex.h"
 #include "bthread/list_of_abafree_id.h"
-#include "butil/resource_pool.h"
+#include "sgxbutil/resource_pool.h"
 #include "bthread/bthread.h"
 
 namespace bthread {
@@ -114,7 +114,7 @@ struct BAIDU_CACHELINE_ALIGNMENT Id {
     // contended_ver: locked and contended
     uint32_t first_ver;
     uint32_t locked_ver;
-    FastPthreadMutex mutex;
+    internal::FastPthreadMutex mutex;
     void* data;
     int (*on_error)(bthread_id_t, void*, int);
     int (*on_error2)(bthread_id_t, void*, int, const std::string&);
@@ -150,7 +150,7 @@ struct BAIDU_CACHELINE_ALIGNMENT Id {
 
 BAIDU_CASSERT(sizeof(Id) % 64 == 0, sizeof_Id_must_align);
 
-typedef butil::ResourceId<Id> IdResourceId;
+typedef sgxbutil::ResourceId<Id> IdResourceId;
 
 inline bthread_id_t make_id(uint32_t version, IdResourceId slot) {
     const bthread_id_t tmp =
@@ -285,13 +285,12 @@ void id_status(bthread_id_t id, std::ostream &os) {
 }
 
 void id_pool_status(std::ostream &os) {
-    os << butil::describe_resources<Id>() << '\n';
+    os << sgxbutil::describe_resources<Id>() << '\n';
 }
 
 struct IdTraits {
     static const size_t BLOCK_SIZE = 63;
     static const size_t MAX_ENTRIES = 100000;
-    static const size_t INIT_GC_SIZE = 4096;
     static const bthread_id_t ID_INIT;
     static bool exists(bthread_id_t id)
     { return bthread::id_exists_with_true_negatives(id); }

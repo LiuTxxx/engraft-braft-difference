@@ -15,28 +15,57 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Sun Sep  7 22:37:39 CST 2014
 
-#include <unistd.h>                               // getpagesize
+// #include <unistd.h>                               // getpagesize
 #include <sys/mman.h>                             // mmap, munmap, mprotect
 #include <algorithm>                              // std::max
 #include <stdlib.h>                               // posix_memalign
-#include "butil/macros.h"                          // BAIDU_CASSERT
-#include "butil/memory/singleton_on_pthread_once.h"
-#include "butil/third_party/dynamic_annotations/dynamic_annotations.h" // RunningOnValgrind
-#include "butil/third_party/valgrind/valgrind.h"   // VALGRIND_STACK_REGISTER
-#include "bvar/passive_status.h"
+#include <unistd.h>
+#include "sgxbutil/macros.h"                          // BAIDU_CASSERT
+#include "sgxbutil/memory/singleton_on_pthread_once.h"
+// #include "sgxbutil/third_party/dynamic_annotations/dynamic_annotations.h" // RunningOnValgrind
+// #include "sgxbutil/third_party/valgrind/valgrind.h"   // VALGRIND_STACK_REGISTER
+//- Remove bvar
+// #include "bvar/passive_status.h"
 #include "bthread/types.h"                        // BTHREAD_STACKTYPE_*
 #include "bthread/stack.h"
 
+//- Stack Size Table
+// +----------+---------+
+// | Capacity |  Bytes  |
+// +----------+---------+
+// |   32KB   |  32768  |
+// +----------+---------+
+// |   128KB  |  131072 |
+// +----------+---------+
+// |   512KB  |  524288 |
+// +----------+---------+
+// |    1MB   | 1048576 |
+// +----------+---------+
+// |    2MB   | 2097152 |
+// +----------+---------+
+// |    4MB   | 4104304 |
+// +----------+---------+
+// |    8MB   | 8388608 |
+// +----------+---------+
 DEFINE_int32(stack_size_small, 32768, "size of small stacks");
-DEFINE_int32(stack_size_normal, 1048576, "size of normal stacks");
-DEFINE_int32(stack_size_large, 8388608, "size of large stacks");
-DEFINE_int32(guard_page_size, 4096, "size of guard page, allocate stacks by malloc if it's 0(not recommended)");
 DEFINE_int32(tc_stack_small, 32, "maximum small stacks cached by each thread");
-DEFINE_int32(tc_stack_normal, 8, "maximum normal stacks cached by each thread");
+
+//- Default: 1MB * 8
+DEFINE_int32(stack_size_normal, 131072, "size of normal stacks");
+DEFINE_int32(tc_stack_normal, 16, "maximum normal stacks cached by each thread");
+
+DEFINE_int32(stack_size_large, 8388608, "size of large stacks");
+
+// DEFINE_int32(guard_page_size, 4096, "size of guard page, allocate stacks by malloc if it's 0(not recommended)");
+//- TODO:BTH Since OE 0.17 don't support mmap yet (will be supported in OE 0.18),
+//- set it to 0 to use malloc instead
+DEFINE_int32(guard_page_size, 0, "size of guard page, allocate stacks by malloc if it's 0(not recommended)");
+
+
 
 namespace bthread {
 
@@ -46,15 +75,21 @@ BAIDU_CASSERT(BTHREAD_STACKTYPE_NORMAL == STACK_TYPE_NORMAL, must_match);
 BAIDU_CASSERT(BTHREAD_STACKTYPE_LARGE == STACK_TYPE_LARGE, must_match);
 BAIDU_CASSERT(STACK_TYPE_MAIN == 0, must_be_0);
 
-static butil::static_atomic<int64_t> s_stack_count = BUTIL_STATIC_ATOMIC_INIT(0);
+static sgxbutil::static_atomic<int64_t> s_stack_count = BUTIL_STATIC_ATOMIC_INIT(0);
 static int64_t get_stack_count(void*) {
-    return s_stack_count.load(butil::memory_order_relaxed);
+    return s_stack_count.load(sgxbutil::memory_order_relaxed);
 }
-static bvar::PassiveStatus<int64_t> bvar_stack_count(
-    "bthread_stack_count", get_stack_count, NULL);
+
+//- Remove bvar
+// static bvar::PassiveStatus<int64_t> bvar_stack_count(
+//     "bthread_stack_count", get_stack_count, NULL);
 
 int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) {
+#if RUN_OUTSIDE_SGX    
     const static int PAGESIZE = getpagesize();
+#endif    
+    //- PAGESIZE (4096) has been defined in 
+    //- openenclave_0_17/include/openenclave/3rdparty/libc/bits/limits.h
     const int PAGESIZE_M1 = PAGESIZE - 1;
     const int MIN_STACKSIZE = PAGESIZE * 2;
     const int MIN_GUARDSIZE = PAGESIZE;
@@ -71,16 +106,16 @@ int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) 
                                      << stacksize << ")";
             return -1;
         }
-        s_stack_count.fetch_add(1, butil::memory_order_relaxed);
+        s_stack_count.fetch_add(1, sgxbutil::memory_order_relaxed);
         s->bottom = (char*)mem + stacksize;
         s->stacksize = stacksize;
         s->guardsize = 0;
-        if (RunningOnValgrind()) {
-            s->valgrind_stack_id = VALGRIND_STACK_REGISTER(
-                s->bottom, (char*)s->bottom - stacksize);
-        } else {
+        // if (RunningOnValgrind()) {
+        //     s->valgrind_stack_id = VALGRIND_STACK_REGISTER(
+        //         s->bottom, (char*)s->bottom - stacksize);
+        // } else {
             s->valgrind_stack_id = 0;
-        }
+        // }
         return 0;
     } else {
         // Align guardsize
@@ -95,7 +130,7 @@ int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) 
         if (MAP_FAILED == mem) {
             PLOG_EVERY_SECOND(ERROR) 
                 << "Fail to mmap size=" << memsize << " stack_count="
-                << s_stack_count.load(butil::memory_order_relaxed)
+                << s_stack_count.load(sgxbutil::memory_order_relaxed)
                 << ", possibly limited by /proc/sys/vm/max_map_count";
             // may fail due to limit of max_map_count (65536 in default)
             return -1;
@@ -107,8 +142,10 @@ int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) 
                 "aligned by pagesize=" << PAGESIZE;
         }
         const int offset = (char*)aligned_mem - (char*)mem;
-        if (guardsize <= offset ||
-            mprotect(aligned_mem, guardsize - offset, PROT_NONE) != 0) {
+        if (guardsize <= offset
+            // || mprotect(aligned_mem, guardsize - offset, PROT_NONE) != 0) {
+            //- OE doesn't support mprotect, and eliminate this func is acceptable
+            ) {
             munmap(mem, memsize);
             PLOG_EVERY_SECOND(ERROR) 
                 << "Fail to mprotect " << (void*)aligned_mem << " length="
@@ -116,29 +153,29 @@ int allocate_stack_storage(StackStorage* s, int stacksize_in, int guardsize_in) 
             return -1;
         }
 
-        s_stack_count.fetch_add(1, butil::memory_order_relaxed);
+        s_stack_count.fetch_add(1, sgxbutil::memory_order_relaxed);
         s->bottom = (char*)mem + memsize;
         s->stacksize = stacksize;
         s->guardsize = guardsize;
-        if (RunningOnValgrind()) {
-            s->valgrind_stack_id = VALGRIND_STACK_REGISTER(
-                s->bottom, (char*)s->bottom - stacksize);
-        } else {
+        // if (RunningOnValgrind()) {
+        //     s->valgrind_stack_id = VALGRIND_STACK_REGISTER(
+        //         s->bottom, (char*)s->bottom - stacksize);
+        // } else {
             s->valgrind_stack_id = 0;
-        }
+        // }
         return 0;
     }
 }
 
 void deallocate_stack_storage(StackStorage* s) {
-    if (RunningOnValgrind()) {
-        VALGRIND_STACK_DEREGISTER(s->valgrind_stack_id);
-    }
+    // if (RunningOnValgrind()) {
+    //     VALGRIND_STACK_DEREGISTER(s->valgrind_stack_id);
+    // }
     const int memsize = s->stacksize + s->guardsize;
     if ((uintptr_t)s->bottom <= (uintptr_t)memsize) {
         return;
     }
-    s_stack_count.fetch_sub(1, butil::memory_order_relaxed);
+    s_stack_count.fetch_sub(1, sgxbutil::memory_order_relaxed);
     if (s->guardsize <= 0) {
         free((char*)s->bottom - memsize);
     } else {

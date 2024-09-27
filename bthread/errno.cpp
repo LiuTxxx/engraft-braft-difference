@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Wed Jul 30 11:47:19 CST 2014
 
@@ -28,20 +28,12 @@ BAIDU_REGISTER_ERRNO(ESTOP, "The structure is stopping")
 
 extern "C" {
 
-#if defined(OS_LINUX)
 
 extern int *__errno_location() __attribute__((__const__));
 
 int *bthread_errno_location() {
     return __errno_location();
 }
-#elif defined(OS_MACOSX)
 
-extern int * __error(void);
-
-int *bthread_errno_location() {
-    return __error();
-}
-#endif
 
 }  // extern "C"

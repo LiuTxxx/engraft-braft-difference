@@ -15,15 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Sun Aug  3 12:46:15 CST 2014
 
 #include <pthread.h>
-#include "butil/macros.h"
-#include "butil/atomicops.h"
-#include "butil/thread_key.h"
-#include "bvar/passive_status.h"
+#include "sgxbutil/macros.h"
+#include "sgxbutil/atomicops.h"
+// #include "bvar/passive_status.h"
 #include "bthread/errno.h"                       // EAGAIN
 #include "bthread/task_group.h"                  // TaskGroup
 
@@ -70,8 +69,8 @@ static size_t nkey = 0;
 static uint32_t s_free_keys[KEYS_MAX];
 
 // Stats.
-static butil::static_atomic<size_t> nkeytable = BUTIL_STATIC_ATOMIC_INIT(0);
-static butil::static_atomic<size_t> nsubkeytable = BUTIL_STATIC_ATOMIC_INIT(0);
+static sgxbutil::static_atomic<size_t> nkeytable = BUTIL_STATIC_ATOMIC_INIT(0);
+static sgxbutil::static_atomic<size_t> nsubkeytable = BUTIL_STATIC_ATOMIC_INIT(0);
 
 // The second-level array.
 // Align with cacheline to avoid false sharing.
@@ -79,12 +78,12 @@ class BAIDU_CACHELINE_ALIGNMENT SubKeyTable {
 public:
     SubKeyTable() {
         memset(_data, 0, sizeof(_data));
-        nsubkeytable.fetch_add(1, butil::memory_order_relaxed);
+        nsubkeytable.fetch_add(1, sgxbutil::memory_order_relaxed);
     }
 
     // NOTE: Call clear first.
     ~SubKeyTable() {
-        nsubkeytable.fetch_sub(1, butil::memory_order_relaxed);
+        nsubkeytable.fetch_sub(1, sgxbutil::memory_order_relaxed);
     }
 
     void clear(uint32_t offset) {
@@ -139,11 +138,11 @@ class BAIDU_CACHELINE_ALIGNMENT KeyTable {
 public:
     KeyTable() : next(NULL) {
         memset(_subs, 0, sizeof(_subs));
-        nkeytable.fetch_add(1, butil::memory_order_relaxed);
+        nkeytable.fetch_add(1, sgxbutil::memory_order_relaxed);
     }
 
     ~KeyTable() {
-        nkeytable.fetch_sub(1, butil::memory_order_relaxed);
+        nkeytable.fetch_sub(1, sgxbutil::memory_order_relaxed);
         for (int ntry = 0; ntry < PTHREAD_DESTRUCTOR_ITERATIONS; ++ntry) {
             for (uint32_t i = 0; i < KEY_1STLEVEL_SIZE; ++i) {
                 if (_subs[i]) {
@@ -205,55 +204,13 @@ private:
     SubKeyTable* _subs[KEY_1STLEVEL_SIZE];
 };
 
-struct KeyTableList {
-    KeyTableList() {
-        keytable = NULL;
-    }
-    ~KeyTableList() {
-        bthread::TaskGroup* g = bthread::tls_task_group;
-        bthread::KeyTable* old_kt = bthread::tls_bls.keytable;
-        while (keytable) {
-            bthread::KeyTable* kt = keytable;
-            keytable = kt->next;
-            bthread::tls_bls.keytable = kt;
-            if (g) {
-                g->current_task()->local_storage.keytable = kt;
-            }
-            delete kt;
-            if (old_kt == kt) {
-                old_kt = NULL;
-            }
-            g = bthread::tls_task_group;
-        }
-        bthread::tls_bls.keytable = old_kt;
-        if(g) {
-            g->current_task()->local_storage.keytable = old_kt;
-        }
-    }
-    KeyTable* keytable;
-};
-
 static KeyTable* borrow_keytable(bthread_keytable_pool_t* pool) {
-    if (pool != NULL && (pool->list || pool->free_keytables)) {
-        KeyTable* p;
-        pthread_rwlock_rdlock(&pool->rwlock);
-        auto list = (butil::ThreadLocal<bthread::KeyTableList>*)pool->list;
-        if (list && list->get()->keytable) {
-            p = list->get()->keytable;
-            list->get()->keytable = p->next;
-            pthread_rwlock_unlock(&pool->rwlock);
+    if (pool != NULL && pool->free_keytables) {
+        BAIDU_SCOPED_LOCK(pool->mutex);
+        KeyTable* p = (KeyTable*)pool->free_keytables;
+        if (p) {
+            pool->free_keytables = p->next;
             return p;
-        }
-        pthread_rwlock_unlock(&pool->rwlock);
-        if (pool->free_keytables) {
-            pthread_rwlock_wrlock(&pool->rwlock);
-            p = (KeyTable*)pool->free_keytables;
-            if (p) {
-                pool->free_keytables = p->next;
-                pthread_rwlock_unlock(&pool->rwlock);
-                return p;
-            }
-            pthread_rwlock_unlock(&pool->rwlock);
         }
     }
     return NULL;
@@ -269,16 +226,14 @@ void return_keytable(bthread_keytable_pool_t* pool, KeyTable* kt) {
         delete kt;
         return;
     }
-    pthread_rwlock_rdlock(&pool->rwlock);
+    std::unique_lock<pthread_mutex_t> mu(pool->mutex);
     if (pool->destroyed) {
-        pthread_rwlock_unlock(&pool->rwlock);
+        mu.unlock();
         delete kt;
         return;
     }
-    auto list = (butil::ThreadLocal<bthread::KeyTableList>*)pool->list;
-    kt->next = list->get()->keytable;
-    list->get()->keytable = kt;
-    pthread_rwlock_unlock(&pool->rwlock);
+    kt->next = (KeyTable*)pool->free_keytables;
+    pool->free_keytables = kt;
 }
 
 static void cleanup_pthread(void* arg) {
@@ -300,20 +255,21 @@ static int get_key_count(void*) {
     return (int)nkey - (int)nfreekey;
 }
 static size_t get_keytable_count(void*) {
-    return nkeytable.load(butil::memory_order_relaxed);
+    return nkeytable.load(sgxbutil::memory_order_relaxed);
 }
 static size_t get_keytable_memory(void*) {
-    const size_t n = nkeytable.load(butil::memory_order_relaxed);
-    const size_t nsub = nsubkeytable.load(butil::memory_order_relaxed);
+    const size_t n = nkeytable.load(sgxbutil::memory_order_relaxed);
+    const size_t nsub = nsubkeytable.load(sgxbutil::memory_order_relaxed);
     return n * sizeof(KeyTable) + nsub * sizeof(SubKeyTable);
 }
 
-static bvar::PassiveStatus<int> s_bthread_key_count(
-    "bthread_key_count", get_key_count, NULL);
-static bvar::PassiveStatus<size_t> s_bthread_keytable_count(
-    "bthread_keytable_count", get_keytable_count, NULL);
-static bvar::PassiveStatus<size_t> s_bthread_keytable_memory(
-    "bthread_keytable_memory", get_keytable_memory, NULL);
+//- Remove bvar
+// static bvar::PassiveStatus<int> s_bthread_key_count(
+//     "bthread_key_count", get_key_count, NULL);
+// static bvar::PassiveStatus<size_t> s_bthread_keytable_count(
+//     "bthread_keytable_count", get_keytable_count, NULL);
+// static bvar::PassiveStatus<size_t> s_bthread_keytable_memory(
+//     "bthread_keytable_memory", get_keytable_memory, NULL);
 
 }  // namespace bthread
 
@@ -324,8 +280,7 @@ int bthread_keytable_pool_init(bthread_keytable_pool_t* pool) {
         LOG(ERROR) << "Param[pool] is NULL";
         return EINVAL;
     }
-    pthread_rwlock_init(&pool->rwlock, NULL);
-    pool->list = new butil::ThreadLocal<bthread::KeyTableList>();
+    pthread_mutex_init(&pool->mutex, NULL);
     pool->free_keytables = NULL;
     pool->destroyed = 0;
     return 0;
@@ -337,16 +292,16 @@ int bthread_keytable_pool_destroy(bthread_keytable_pool_t* pool) {
         return EINVAL;
     }
     bthread::KeyTable* saved_free_keytables = NULL;
-    pthread_rwlock_wrlock(&pool->rwlock);
-    pool->destroyed = 1;
-    delete (butil::ThreadLocal<bthread::KeyTableList>*)pool->list;
-    saved_free_keytables = (bthread::KeyTable*)pool->free_keytables;
-    pool->list = NULL;
-    pool->free_keytables = NULL;
-    pthread_rwlock_unlock(&pool->rwlock);
-
+    {
+        BAIDU_SCOPED_LOCK(pool->mutex);
+        if (pool->free_keytables) {
+            saved_free_keytables = (bthread::KeyTable*)pool->free_keytables;
+            pool->free_keytables = NULL;
+        }
+        pool->destroyed = 1;
+    }
     // Cheat get/setspecific and destroy the keytables.
-    bthread::TaskGroup* g = bthread::tls_task_group;
+    bthread::TaskGroup* const g = bthread::tls_task_group;
     bthread::KeyTable* old_kt = bthread::tls_bls.keytable;
     while (saved_free_keytables) {
         bthread::KeyTable* kt = saved_free_keytables;
@@ -356,7 +311,9 @@ int bthread_keytable_pool_destroy(bthread_keytable_pool_t* pool) {
             g->current_task()->local_storage.keytable = kt;
         }
         delete kt;
-        g = bthread::tls_task_group;
+        if (old_kt == kt) {
+            old_kt = NULL;
+        }
     }
     bthread::tls_bls.keytable = old_kt;
     if (g) {
@@ -374,12 +331,11 @@ int bthread_keytable_pool_getstat(bthread_keytable_pool_t* pool,
         LOG(ERROR) << "Param[pool] or Param[stat] is NULL";
         return EINVAL;
     }
-    pthread_rwlock_rdlock(&pool->rwlock);
+    std::unique_lock<pthread_mutex_t> mu(pool->mutex);
     size_t count = 0;
     bthread::KeyTable* p = (bthread::KeyTable*)pool->free_keytables;
     for (; p; p = p->next, ++count) {}
     stat->nfree = count;
-    pthread_rwlock_unlock(&pool->rwlock);
     return 0;
 }
 
@@ -410,15 +366,14 @@ void bthread_keytable_pool_reserve(bthread_keytable_pool_t* pool,
             kt->set_data(key, data);
         }  // else append kt w/o data.
 
-        pthread_rwlock_wrlock(&pool->rwlock);
+        std::unique_lock<pthread_mutex_t> mu(pool->mutex);
         if (pool->destroyed) {
-            pthread_rwlock_unlock(&pool->rwlock);
+            mu.unlock();
             delete kt;
             break;
         }
         kt->next = (bthread::KeyTable*)pool->free_keytables;
         pool->free_keytables = kt;
-        pthread_rwlock_unlock(&pool->rwlock);
         if (data == NULL) {
             break;
         }
@@ -492,14 +447,10 @@ int bthread_setspecific(bthread_key_t key, void* data) {
         bthread::TaskGroup* const g = bthread::tls_task_group;
         if (g) {
             g->current_task()->local_storage.keytable = kt;
-        } else {
-            // Only cleanup keytable created by pthread.
-            // keytable created by bthread will be deleted
-            // in `return_keytable' or `bthread_keytable_pool_destroy'.
-            if (!bthread::tls_ever_created_keytable) {
-                bthread::tls_ever_created_keytable = true;
-                CHECK_EQ(0, butil::thread_atexit(bthread::cleanup_pthread, kt));
-            }
+        }
+        if (!bthread::tls_ever_created_keytable) {
+            bthread::tls_ever_created_keytable = true;
+            CHECK_EQ(0, sgxbutil::thread_atexit(bthread::cleanup_pthread, kt));
         }
     }
     return kt->set_data(key, data);

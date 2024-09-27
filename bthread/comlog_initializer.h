@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Mon Sep 15 10:51:15 CST 2014
 
@@ -23,7 +23,7 @@
 #define BTHREAD_COMLOG_INITIALIZER_H
 
 #include <com_log.h>                       // com_openlog_r, com_closelog_r
-#include "butil/macros.h"
+#include "sgxbutil/macros.h"
 
 namespace bthread {
 

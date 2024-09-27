@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Sun Sep  7 22:37:39 CST 2014
 
@@ -23,10 +23,10 @@
 #define BTHREAD_ALLOCATE_STACK_H
 
 #include <assert.h>
-#include <gflags/gflags.h>          // DECLARE_int32
+#include "google/gflags/gflags.h"          // DECLARE_int32
 #include "bthread/types.h"
 #include "bthread/context.h"        // bthread_fcontext_t
-#include "butil/object_pool.h"
+#include "sgxbutil/object_pool.h"
 
 namespace bthread {
 

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
@@ -34,7 +34,7 @@
 //   functions if you're not ready to change your code according to newer
 //   versions of bthread.
 
-__BEGIN_DECLS
+extern "C" {
 
 // Schedule tasks created by BTHREAD_NOSIGNAL
 extern void bthread_flush();
@@ -46,7 +46,7 @@ extern int bthread_about_to_quit();
 // Run `on_timer(arg)' at or after real-time `abstime'. Put identifier of the
 // timer into *id.
 // Return 0 on success, errno otherwise.
-extern int bthread_timer_add(bthread_timer_t* id, struct timespec abstime,
+extern int bthread_timer_add(bthread_timer_t* id, timespec abstime,
                              void (*on_timer)(void*), void* arg);
 
 // Unschedule the timer associated with `id'.
@@ -65,7 +65,7 @@ extern int bthread_fd_wait(int fd, unsigned events);
 // or CLOCK_REALTIME reached `abstime' if abstime is not NULL.
 // Returns 0 on success, -1 otherwise and errno is set.
 extern int bthread_fd_timedwait(int fd, unsigned epoll_events,
-                                const struct timespec* abstime);
+                                const timespec* abstime);
 
 // Close file descriptor `fd' and wake up all threads waiting on it.
 // User should call this function instead of close(2) if bthread_fd_wait,
@@ -76,23 +76,13 @@ extern int bthread_fd_timedwait(int fd, unsigned epoll_events,
 extern int bthread_close(int fd);
 
 // Replacement of connect(2) in bthreads.
-extern int bthread_connect(int sockfd, const struct sockaddr* serv_addr,
+extern int bthread_connect(int sockfd, const sockaddr* serv_addr,
                            socklen_t addrlen);
-// Suspend caller thread until connect(2) on `sockfd' succeeds
-// or CLOCK_REALTIME reached `abstime' if `abstime' is not NULL.
-extern int bthread_timed_connect(int sockfd, const struct sockaddr* serv_addr,
-                                 socklen_t addrlen, const timespec* abstime);
 
 // Add a startup function that each pthread worker will run at the beginning
-// To run code at the end, use butil::thread_atexit()
+// To run code at the end, use sgxbutil::thread_atexit()
 // Returns 0 on success, error code otherwise.
 extern int bthread_set_worker_startfn(void (*start_fn)());
-
-// Add a startup function with tag
-extern int bthread_set_tagged_worker_startfn(void (*start_fn)(bthread_tag_t));
-
-// Add a create span function
-extern int bthread_set_create_span_func(void* (*func)());
 
 // Stop all bthread and worker pthreads.
 // You should avoid calling this function which may cause bthread after main()
@@ -107,7 +97,7 @@ extern int bthread_key_create2(bthread_key_t* key,
                                void (*destructor)(void* data, const void* dtor_arg),
                                const void* dtor_arg);
 
-// CAUTION: functions marked with [RPC INTERNAL] are NOT supposed to be called
+// CAUTION: functions marked with [PRC INTERNAL] are NOT supposed to be called
 // by RPC users.
 
 // [RPC INTERNAL]
@@ -135,6 +125,6 @@ extern void bthread_keytable_pool_reserve(
     bthread_keytable_pool_t* pool, size_t nfree,
     bthread_key_t key, void* ctor(const void* args), const void* args);
 
-__END_DECLS
+}
 
 #endif  // BTHREAD_UNSTABLE_H

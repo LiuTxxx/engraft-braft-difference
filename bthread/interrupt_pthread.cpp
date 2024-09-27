@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// bthread - An M:N threading library to make applications more concurrent.
+// bthread - A M:N threading library to make applications more concurrent.
 
 // Date: Tue Jul 10 17:40:58 CST 2012
 
@@ -36,7 +36,9 @@ static void register_sigurg() {
 
 int interrupt_pthread(pthread_t th) {
     pthread_once(&register_sigurg_once, register_sigurg);
-    return pthread_kill(th, SIGURG);
+    //- TODO:BTH OE doesn't support pthread_kill, so return 0 directly
+    return 0;
+    // return pthread_kill(th, SIGURG);
 }
 
 }  // namespace bthread
